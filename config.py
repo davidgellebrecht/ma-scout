@@ -110,20 +110,26 @@ TARGET_CITIES = get_cities()
 # PREMIUM layers require paid API subscriptions (Google Maps, Claude API).
 
 # ── FREE LAYERS (no cost, always available) ──────────────────────────────────
+# Layers are grouped by speed:
+#   INSTANT — pure database analysis, no network calls (milliseconds)
+#   NETWORK — makes live HTTP requests per company (slow on large datasets)
+
 LAYERS = {
-    "cslb_lifecycle":    True,    # FREE — CSLB public license data
-    "fbn_sweep":         True,    # FREE — County Clerk FBN filings (public record)
-    "digital_distress":  True,    # FREE — Google Maps unclaimed/low-rated profiles
-    "nextdoor_referral": True,    # FREE — Nextdoor referral mentions (manual + AI)
-    "workers_comp":      True,    # FREE — CSLB workers comp data (no WC = tiny shop)
-    "website_decay":     True,    # FREE — WHOIS + Wayback Machine domain age/decay
-    "sba_loan":          True,    # FREE — SBA PPP/EIDL loan data (data.sba.gov)
-    "sos_status":        True,    # FREE — CA Secretary of State entity status
-    "bbb_complaints":    True,    # FREE — BBB complaint + response patterns
-    "bond_amount":       True,    # FREE — CSLB contractor bond (min $25K = lifestyle biz)
-    "google_closed":     True,    # FREE — Google Maps "Permanently Closed" vs active license
-    "review_fatigue":    True,    # FREE — Review text burnout keyword analysis
-    "property_change":   True,    # FREE — Grant Deed / property turnover signals
+    # ── INSTANT (default ON — run in < 1 second even on 4,000 companies) ──
+    "cslb_lifecycle":    True,    # FREE INSTANT — retirement candidate scoring
+    "workers_comp":      True,    # FREE INSTANT — no WC = micro-operator
+    "bond_amount":       True,    # FREE INSTANT — min bond = lifestyle biz
+    "sba_loan":          True,    # FREE INSTANT — pre-COVID sole prop proxy
+    "sos_status":        True,    # FREE INSTANT — never incorporated signal
+    "bbb_complaints":    True,    # FREE INSTANT — no BBB after 15+ years
+    # ── NETWORK (default OFF — enable for deeper analysis, slower scan) ───
+    "website_decay":     False,   # FREE NETWORK — WHOIS + Wayback per company
+    "fbn_sweep":         False,   # FREE INSTANT — County Clerk FBN (demo data)
+    "digital_distress":  False,   # FREE INSTANT — Google Maps (demo data)
+    "nextdoor_referral": False,   # FREE INSTANT — Nextdoor (demo data)
+    "google_closed":     False,   # FREE INSTANT — Google closed (demo data)
+    "review_fatigue":    False,   # FREE INSTANT — review keywords (needs data)
+    "property_change":   False,   # FREE INSTANT — property turnover (demo data)
 }
 
 # ── PREMIUM LAYERS (require paid API keys) ───────────────────────────────────
