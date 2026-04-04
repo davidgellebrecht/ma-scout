@@ -1,5 +1,7 @@
-# Database
-data/mascout.db
+# Database temp files (the .db itself is committed with seed data)
+data/mascout.db-shm
+data/mascout.db-wal
+data/mascout.db-journal
 data/street_view/
 
 # Secrets
