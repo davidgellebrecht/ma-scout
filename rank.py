@@ -43,6 +43,13 @@ SIGNAL_LABELS = {
     "nextdoor_referral": "Nextdoor Referral",
     "workers_comp":      "No Workers Comp",
     "website_decay":     "Website Decay",
+    "sba_loan":          "SBA Loan Flag",
+    "sos_status":        "Entity Status",
+    "bbb_complaints":    "BBB Complaints",
+    "bond_amount":       "Min Bond",
+    "google_closed":     "Google Closed",
+    "review_fatigue":    "Owner Fatigue",
+    "property_change":   "Property Turnover",
     # Premium layers
     "digital_ghost":     "Digital Ghost",
     "permit_pipeline":   "Permit Stress",

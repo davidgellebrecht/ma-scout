@@ -117,6 +117,13 @@ LAYERS = {
     "nextdoor_referral": True,    # FREE — Nextdoor referral mentions (manual + AI)
     "workers_comp":      True,    # FREE — CSLB workers comp data (no WC = tiny shop)
     "website_decay":     True,    # FREE — WHOIS + Wayback Machine domain age/decay
+    "sba_loan":          True,    # FREE — SBA PPP/EIDL loan data (data.sba.gov)
+    "sos_status":        True,    # FREE — CA Secretary of State entity status
+    "bbb_complaints":    True,    # FREE — BBB complaint + response patterns
+    "bond_amount":       True,    # FREE — CSLB contractor bond (min $25K = lifestyle biz)
+    "google_closed":     True,    # FREE — Google Maps "Permanently Closed" vs active license
+    "review_fatigue":    True,    # FREE — Review text burnout keyword analysis
+    "property_change":   True,    # FREE — Grant Deed / property turnover signals
 }
 
 # ── PREMIUM LAYERS (require paid API keys) ───────────────────────────────────

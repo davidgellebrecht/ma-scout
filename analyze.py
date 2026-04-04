@@ -40,6 +40,13 @@ from layers.digital_distress import DigitalDistressLayer
 from layers.nextdoor_referral import NextdoorReferralLayer
 from layers.workers_comp import WorkersCompLayer
 from layers.website_decay import WebsiteDecayLayer
+from layers.sba_loan import SBALoanLayer
+from layers.sos_status import SOSStatusLayer
+from layers.bbb_complaints import BBBComplaintsLayer
+from layers.bond_amount import BondAmountLayer
+from layers.google_closed import GoogleClosedLayer
+from layers.review_fatigue import ReviewFatigueLayer
+from layers.property_change import PropertyChangeLayer
 from layers.permit_pipeline import PermitPipelineLayer
 from layers.fleet_aging import FleetAgingLayer
 
@@ -53,6 +60,13 @@ ALL_LAYERS = [
     NextdoorReferralLayer(),     # free — Nextdoor referral mentions
     WorkersCompLayer(),          # free — CSLB workers comp data
     WebsiteDecayLayer(),         # free — WHOIS + Wayback Machine
+    SBALoanLayer(),              # free — SBA PPP/EIDL loan data
+    SOSStatusLayer(),            # free — CA Secretary of State
+    BBBComplaintsLayer(),        # free — BBB complaint patterns
+    BondAmountLayer(),           # free — CSLB bond amount
+    GoogleClosedLayer(),         # free — Google Maps closed status
+    ReviewFatigueLayer(),        # free — Review text burnout keywords
+    PropertyChangeLayer(),       # free — Property turnover / Grant Deed
     # Premium layers
     DigitalGhostLayer(),         # premium — Yelp Fusion API ($229+/mo)
     PermitPipelineLayer(),    # free — permit data already in DB

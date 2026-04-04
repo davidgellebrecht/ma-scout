@@ -82,6 +82,69 @@ LAYER_META = {
         "cost": "Free",
         "tier": "free",
     },
+    "sba_loan": {
+        "label": "SBA Loan Flag",
+        "icon": "&#128176;",  # money bag
+        "desc": "PPP/EIDL loan recipients who never grew — still treading water post-COVID.",
+        "why": "A company that took survival money but stayed a sole prop is mentally done growing. They want an exit, not another decade.",
+        "source": "SBA Open Data Portal (data.sba.gov, public by law)",
+        "cost": "Free",
+        "tier": "free",
+    },
+    "sos_status": {
+        "label": "Entity Status",
+        "icon": "&#127963;",  # classical building
+        "desc": "CA Secretary of State entity status — Suspended, FTB Suspended, or never incorporated.",
+        "why": "A Corp/LLC suspended by the Franchise Tax Board = owner stopped paying taxes on the entity. They've mentally checked out.",
+        "source": "bizfileonline.sos.ca.gov (free, no account)",
+        "cost": "Free",
+        "tier": "free",
+    },
+    "bbb_complaints": {
+        "label": "BBB Complaints",
+        "icon": "&#128172;",  # speech bubble
+        "desc": "BBB complaints the owner never responded to — sign of total disengagement.",
+        "why": "An owner who ignores BBB complaints has stopped caring about their reputation. They're ready to hand over the keys.",
+        "source": "BBB public profiles (bbb.org)",
+        "cost": "Free",
+        "tier": "free",
+    },
+    "bond_amount": {
+        "label": "Min Bond",
+        "icon": "&#128274;",  # lock
+        "desc": "Contractors maintaining the minimum $25K bond for 15+ years — never scaled up.",
+        "why": "A minimum-bond shop for 20 years is a classic lifestyle business. The owner earns enough but has zero growth ambition or succession plan.",
+        "source": "CSLB license data (public record)",
+        "cost": "Free",
+        "tier": "free",
+    },
+    "google_closed": {
+        "label": "Google Closed",
+        "icon": "&#128683;",  # no entry
+        "desc": "Businesses marked 'Permanently Closed' on Google but still holding active CSLB licenses.",
+        "why": "Closed on Google + active license = retired-in-place. They still do jobs by word-of-mouth. Buy their license and route.",
+        "source": "Google Maps public data",
+        "cost": "Free",
+        "tier": "free",
+    },
+    "review_fatigue": {
+        "label": "Owner Fatigue",
+        "icon": "&#128548;",  # weary face
+        "desc": "Reviews mentioning missed calls, no-shows, declining quality — signs the owner is burned out.",
+        "why": "Multiple customers independently saying 'quality dropped' = the owner is done. Approach with empathy and a partnership offer.",
+        "source": "Review text analysis (keyword matching, optional LLM)",
+        "cost": "Free",
+        "tier": "free",
+    },
+    "property_change": {
+        "label": "Property Turnover",
+        "icon": "&#127970;",  # office building
+        "desc": "Commercial properties changing hands — new owners fire old vendors within 90 days.",
+        "why": "Two plays: buy the fired vendor's contracts, OR pitch the new owner directly. Either way, property sales create deal flow.",
+        "source": "County Recorder Grant Deeds (public record)",
+        "cost": "Free",
+        "tier": "free",
+    },
     # ── PREMIUM LAYERS ───────────────────────────────────────────────────
     "digital_ghost": {
         "label": "Digital Ghost",
@@ -315,6 +378,125 @@ st.markdown("---")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# CSLB FILE UPLOADER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+with st.expander("Upload CSLB Master List (optional — supercharges the scan)"):
+    st.caption(
+        "Download the free C-27 Master List from the "
+        "[CSLB Data Portal](https://www.cslb.ca.gov/onlineservices/dataportal/) "
+        "and upload it here. The app will filter for {} County sole proprietors "
+        "with licenses issued before 2005 — your instant retirement-candidate lead list.".format(
+            config.get_county())
+    )
+
+    uploaded_file = st.file_uploader(
+        "Upload CSLB CSV or Excel file",
+        type=["csv", "xlsx", "xls"],
+        key="cslb_upload",
+    )
+
+    if uploaded_file is not None:
+        try:
+            import io
+            if uploaded_file.name.endswith(".csv"):
+                df_upload = pd.read_csv(uploaded_file)
+            else:
+                df_upload = pd.read_excel(io.BytesIO(uploaded_file.read()))
+
+            st.write("Loaded {} records".format(len(df_upload)))
+
+            # Show column names so user can verify
+            st.caption("Columns: {}".format(", ".join(df_upload.columns.tolist())))
+
+            # Auto-detect key columns (CSLB uses various naming conventions)
+            col_map = {}
+            for col in df_upload.columns:
+                cl = col.lower().strip()
+                if "license" in cl and "num" in cl:
+                    col_map["license_number"] = col
+                elif "business" in cl and "name" in cl:
+                    col_map["business_name"] = col
+                elif "entity" in cl or ("license" in cl and "type" in cl):
+                    col_map["license_type"] = col
+                elif "issue" in cl and "date" in cl:
+                    col_map["issue_date"] = col
+                elif "expir" in cl and "date" in cl:
+                    col_map["expiry_date"] = col
+                elif cl in ("city",):
+                    col_map["city"] = col
+                elif cl in ("county",):
+                    col_map["county"] = col
+                elif cl in ("zip", "zip code", "zipcode"):
+                    col_map["zip_code"] = col
+                elif cl in ("phone", "phone number", "telephone"):
+                    col_map["phone"] = col
+                elif cl in ("address",):
+                    col_map["address"] = col
+                elif "status" in cl:
+                    col_map["status"] = col
+
+            if "business_name" not in col_map:
+                st.warning("Could not find a 'Business Name' column. Check the file format.")
+            else:
+                # Filter for target county
+                county = config.get_county()
+                if "county" in col_map:
+                    mask = df_upload[col_map["county"]].str.contains(county, case=False, na=False)
+                    df_filtered = df_upload[mask]
+                else:
+                    df_filtered = df_upload  # no county column, use all
+
+                # Filter for sole proprietors if we can
+                if "license_type" in col_map:
+                    sole_mask = df_filtered[col_map["license_type"]].str.contains(
+                        "Sole|Individual", case=False, na=False)
+                    df_sole = df_filtered[sole_mask]
+                else:
+                    df_sole = df_filtered
+
+                st.write("After filtering: **{}** {} County records, **{}** sole proprietors".format(
+                    len(df_filtered), county, len(df_sole)))
+
+                if st.button("Import {} Records".format(len(df_sole)), type="primary"):
+                    from db import get_connection, upsert_company
+                    from models import Company
+                    from datetime import datetime
+
+                    conn = get_connection()
+                    imported = 0
+                    for _, row in df_sole.iterrows():
+                        try:
+                            c = Company(
+                                business_name=str(row.get(col_map.get("business_name", ""), "Unknown")),
+                                license_number=str(row.get(col_map.get("license_number", ""), "")),
+                                license_type=str(row.get(col_map.get("license_type", ""), "")),
+                                license_status=str(row.get(col_map.get("status", ""), "Active")),
+                                license_class="C-27",
+                                address=str(row.get(col_map.get("address", ""), "")),
+                                city=str(row.get(col_map.get("city", ""), "")),
+                                zip_code=str(row.get(col_map.get("zip_code", ""), "")),
+                                county=county,
+                                phone=str(row.get(col_map.get("phone", ""), "")),
+                                source="cslb_upload",
+                            )
+                            c.generate_id()
+                            upsert_company(conn, c)
+                            imported += 1
+                        except Exception:
+                            continue
+                    conn.close()
+                    load_data.clear()
+                    st.success("Imported {} companies from CSLB file".format(imported))
+                    st.rerun()
+
+        except Exception as e:
+            st.error("Error reading file: {}".format(e))
+
+st.markdown("---")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # LAYER SELECTION PANEL
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -328,7 +510,10 @@ layers_state = {}
 # ── Free Layers (3-column grid with descriptions) ────────────────────────────
 
 free_layer_keys = ["cslb_lifecycle", "fbn_sweep", "digital_distress",
-                   "nextdoor_referral", "workers_comp", "website_decay"]
+                   "nextdoor_referral", "workers_comp", "website_decay",
+                   "sba_loan", "sos_status", "bbb_complaints",
+                   "bond_amount", "google_closed",
+                   "review_fatigue", "property_change"]
 
 c1, c2, c3 = st.columns(3)
 for i, key in enumerate(free_layer_keys):
