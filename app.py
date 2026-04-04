@@ -538,10 +538,20 @@ if city_filter:
 
 enabled_count = sum(1 for v in config.LAYERS.values() if v)
 
-# If no data, stop here with a helpful message
+# Check if signals have been generated (not just companies loaded)
+has_signals = any(r.signals_fired > 0 for r in results) if results else False
+
 if not results:
     st.markdown("---")
     st.info("No companies in database yet. Click **Run Full Scan** above to collect data.")
+    st.stop()
+
+if not has_signals:
+    st.markdown("---")
+    conn = get_connection()
+    total = get_company_count(conn)
+    conn.close()
+    st.success("**{}** contractors loaded from CSLB data. Click **Run Full Scan** above to analyse them with all 13 signal layers.".format(total))
     st.stop()
 
 
