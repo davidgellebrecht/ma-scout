@@ -370,6 +370,14 @@ selected_market = st.selectbox(
 )
 config.ACTIVE_MARKET = selected_market
 
+# Define load_data early so it's available for the file uploader
+@st.cache_data(ttl=60)
+def load_data():
+    conn = get_connection()
+    results = get_ranked_companies(conn)
+    conn.close()
+    return results
+
 market = config.get_market()
 st.caption("{} — {} cities, {} wealthy zip codes tracked".format(
     market["label"], len(market["cities"]), len(market["wealthy_zips"])))
@@ -582,14 +590,6 @@ if run_btn:
 # ═══════════════════════════════════════════════════════════════════════════════
 # DATA LOADING + SCAN EXECUTION
 # ═══════════════════════════════════════════════════════════════════════════════
-
-@st.cache_data(ttl=60)
-def load_data():
-    conn = get_connection()
-    results = get_ranked_companies(conn)
-    conn.close()
-    return results
-
 
 def run_full_scan():
     from analyze import run_analysis
