@@ -38,6 +38,8 @@ from layers.digital_ghost import DigitalGhostLayer
 from layers.fbn_sweep import FBNSweepLayer
 from layers.digital_distress import DigitalDistressLayer
 from layers.nextdoor_referral import NextdoorReferralLayer
+from layers.workers_comp import WorkersCompLayer
+from layers.website_decay import WebsiteDecayLayer
 from layers.permit_pipeline import PermitPipelineLayer
 from layers.fleet_aging import FleetAgingLayer
 
@@ -46,10 +48,13 @@ from layers.fleet_aging import FleetAgingLayer
 ALL_LAYERS = [
     # Free layers
     CSLBLifecycleLayer(),        # free — CSLB public data
-    DigitalGhostLayer(),         # free — review data already in DB
     FBNSweepLayer(),             # free — County Clerk FBN filings
     DigitalDistressLayer(),      # free — Google Maps low-rated businesses
     NextdoorReferralLayer(),     # free — Nextdoor referral mentions
+    WorkersCompLayer(),          # free — CSLB workers comp data
+    WebsiteDecayLayer(),         # free — WHOIS + Wayback Machine
+    # Premium layers
+    DigitalGhostLayer(),         # premium — Yelp Fusion API ($229+/mo)
     PermitPipelineLayer(),    # free — permit data already in DB
     FleetAgingLayer(),        # paid — Claude Vision API
 ]

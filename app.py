@@ -27,22 +27,14 @@ from rank import to_flat_dicts, SIGNAL_LABELS
 # ─── Layer metadata (descriptions, icons, why-it-matters) ───────────────────
 
 LAYER_META = {
+    # ── FREE LAYERS ──────────────────────────────────────────────────────
     "cslb_lifecycle": {
         "label": "License Lifecycle",
         "icon": "&#128203;",  # clipboard
         "desc": "CSLB C-27 license data: sole proprietors active 25+ years nearing renewal.",
         "why": "A sole proprietor who never incorporated after 25 years is likely approaching retirement with no succession plan.",
         "source": "CA Contractors State License Board (public record)",
-        "cost": "Free (Apify free tier)",
-        "tier": "free",
-    },
-    "digital_ghost": {
-        "label": "Digital Ghost",
-        "icon": "&#128123;",  # ghost
-        "desc": "High-rated businesses whose owner stopped managing their online presence.",
-        "why": "A 4.5-star company with no reviews in 2+ years has a great reputation but a burnt-out owner ready for a roll-up.",
-        "source": "Yelp Fusion API (reviews + ratings)",
-        "cost": "Free (5,000 calls/day)",
+        "cost": "Free",
         "tier": "free",
     },
     "fbn_sweep": {
@@ -71,6 +63,34 @@ LAYER_META = {
         "source": "Nextdoor recommendation threads",
         "cost": "Free (manual collection)",
         "tier": "free",
+    },
+    "workers_comp": {
+        "label": "No Workers Comp",
+        "icon": "&#128119;",  # construction worker
+        "desc": "CSLB contractors with no workers comp insurance — signals a true one-person operation.",
+        "why": "No WC = no employees. These are the smallest, cheapest shops to acquire. The owner IS the entire business.",
+        "source": "CSLB license data (public record)",
+        "cost": "Free",
+        "tier": "free",
+    },
+    "website_decay": {
+        "label": "Website Decay",
+        "icon": "&#127760;",  # globe
+        "desc": "Expired domains, parked pages, or websites not updated in 2+ years (WHOIS + Wayback Machine).",
+        "why": "A company that had a website but let it die invested in growth once, then gave up. They're coasting toward an exit.",
+        "source": "WHOIS + Wayback Machine CDX API (both free)",
+        "cost": "Free",
+        "tier": "free",
+    },
+    # ── PREMIUM LAYERS ───────────────────────────────────────────────────
+    "digital_ghost": {
+        "label": "Digital Ghost",
+        "icon": "&#128123;",  # ghost
+        "desc": "High-rated businesses whose owner stopped managing their online presence.",
+        "why": "A 4.5-star company with no reviews in 2+ years has a great reputation but a burnt-out owner ready for a roll-up.",
+        "source": "Yelp Fusion API (reviews + ratings)",
+        "cost": "$229+/month (Yelp Places API)",
+        "tier": "premium",
     },
     "permit_pipeline": {
         "label": "Permit Stress",
@@ -307,8 +327,8 @@ layers_state = {}
 
 # ── Free Layers (3-column grid with descriptions) ────────────────────────────
 
-free_layer_keys = ["cslb_lifecycle", "digital_ghost", "fbn_sweep",
-                   "digital_distress", "nextdoor_referral"]
+free_layer_keys = ["cslb_lifecycle", "fbn_sweep", "digital_distress",
+                   "nextdoor_referral", "workers_comp", "website_decay"]
 
 c1, c2, c3 = st.columns(3)
 for i, key in enumerate(free_layer_keys):
@@ -331,10 +351,10 @@ st.markdown("")  # spacing
 # ── Premium Layers ───────────────────────────────────────────────────────────
 
 with st.expander("Premium Layers (paid API keys required)"):
-    pc1, pc2 = st.columns(2)
-    for i, key in enumerate(["permit_pipeline", "fleet_aging"]):
+    pc1, pc2, pc3 = st.columns(3)
+    for i, key in enumerate(["digital_ghost", "permit_pipeline", "fleet_aging"]):
         meta = LAYER_META[key]
-        col = [pc1, pc2][i % 2]
+        col = [pc1, pc2, pc3][i % 3]
         with col:
             layers_state[key] = st.checkbox(
                 meta["label"],
@@ -397,10 +417,6 @@ def run_full_scan():
         from collectors.cslb import collect_cslb
         collect_cslb(conn)
 
-        st.write("Collecting Yelp review data...")
-        from collectors.yelp import collect_yelp
-        collect_yelp(conn)
-
         if layers_state.get("fbn_sweep"):
             st.write("Sweeping FBN filings...")
             from collectors.fbn import collect_fbn
@@ -417,6 +433,11 @@ def run_full_scan():
             collect_nextdoor(conn)
 
         # Premium collectors
+        if config.YELP_API_KEY and layers_state.get("digital_ghost"):
+            st.write("Collecting Yelp review data...")
+            from collectors.yelp import collect_yelp
+            collect_yelp(conn)
+
         if config.GOOGLE_MAPS_API_KEY:
             st.write("Enriching with Google Places data...")
             from collectors.google_places import collect_google_places

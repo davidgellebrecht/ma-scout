@@ -38,11 +38,13 @@ from models import CompanyWithSignals
 SIGNAL_LABELS = {
     # Free layers
     "cslb_lifecycle":    "License Lifecycle",
-    "digital_ghost":     "Digital Ghost",
     "fbn_sweep":         "FBN Sweep",
     "digital_distress":  "Digital Distress",
     "nextdoor_referral": "Nextdoor Referral",
+    "workers_comp":      "No Workers Comp",
+    "website_decay":     "Website Decay",
     # Premium layers
+    "digital_ghost":     "Digital Ghost",
     "permit_pipeline":   "Permit Stress",
     "fleet_aging":       "Fleet Aging",
 }

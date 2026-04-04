@@ -111,15 +111,17 @@ TARGET_CITIES = get_cities()
 
 # ── FREE LAYERS (no cost, always available) ──────────────────────────────────
 LAYERS = {
-    "cslb_lifecycle":    True,    # FREE — CSLB public license data (Apify free tier)
-    "digital_ghost":     True,    # FREE — Yelp Fusion API (5,000 free calls/day)
+    "cslb_lifecycle":    True,    # FREE — CSLB public license data
     "fbn_sweep":         True,    # FREE — County Clerk FBN filings (public record)
     "digital_distress":  True,    # FREE — Google Maps unclaimed/low-rated profiles
     "nextdoor_referral": True,    # FREE — Nextdoor referral mentions (manual + AI)
+    "workers_comp":      True,    # FREE — CSLB workers comp data (no WC = tiny shop)
+    "website_decay":     True,    # FREE — WHOIS + Wayback Machine domain age/decay
 }
 
 # ── PREMIUM LAYERS (require paid API keys) ───────────────────────────────────
 PREMIUM_LAYERS = {
+    "digital_ghost":    False,   # PREMIUM — Yelp Fusion API ($229+/month)
     "permit_pipeline":  False,   # PREMIUM — needs city permit portal scrapers
     "fleet_aging":      False,   # PREMIUM — needs Google Street View + Claude Vision API
 }
@@ -168,7 +170,19 @@ NEXTDOOR_SEARCH_TERMS = [              # search Nextdoor for these phrases
     "looking for a gardener", "need a landscaper",
 ]
 
-# ─── Strategy 6: Permit Pipeline (PREMIUM) ──────────────────────────────────
+# ─── Strategy 6: Workers Comp Check (FREE) ──────────────────────────────────
+# The CSLB master list includes workers comp insurance status.  A landscaping
+# company with NO workers comp = very small (sole prop, no employees).
+# These are the smallest shops — easiest to acquire.
+WORKERS_COMP_FLAG_MISSING = True   # flag companies with no workers comp
+
+# ─── Strategy 7: Website Decay (FREE) ───────────────────────────────────────
+# Check if a company's website domain is expired, parked, or hasn't been
+# updated in years using WHOIS + Wayback Machine CDX API (both free).
+WEBSITE_DECAY_MIN_YEARS = 2        # domain not updated in 2+ years
+WEBSITE_DECAY_CHECK_WHOIS = True   # check WHOIS for domain expiry
+
+# ─── Strategy 8: Permit Pipeline (PREMIUM) ──────────────────────────────────
 SMALL_CREW_MAX          = 5
 LARGE_PERMIT_VALUE      = 50_000
 PERMIT_LOOKBACK_MONTHS  = 12

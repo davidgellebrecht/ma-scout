@@ -55,11 +55,14 @@ def main():
     cslb_count = collect_cslb(conn)
     print("         -> {} license records ingested\n".format(cslb_count))
 
-    # 2. Yelp Fusion
-    print("  [2/{}] Yelp Fusion API".format(total_steps))
-    from collectors.yelp import collect_yelp
-    yelp_count = collect_yelp(conn)
-    print("         -> {} Yelp business records\n".format(yelp_count))
+    # 2. Yelp Fusion (PREMIUM)
+    if config.YELP_API_KEY:
+        print("  [2/{}] Yelp Fusion API (PREMIUM)".format(total_steps))
+        from collectors.yelp import collect_yelp
+        yelp_count = collect_yelp(conn)
+        print("         -> {} Yelp business records\n".format(yelp_count))
+    else:
+        print("  [2/{}] Yelp -- SKIPPED (no API key)\n".format(total_steps))
 
     # 3. FBN Sweep (County Clerk filings)
     if config.LAYERS.get("fbn_sweep"):

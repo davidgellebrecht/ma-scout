@@ -15,6 +15,9 @@ python-Levenshtein>=0.25.0
 # Excel parsing (CSLB data portal downloads)
 openpyxl>=3.1.0
 
+# WHOIS domain lookup (website decay layer)
+python-whois>=0.9.0
+
 # API clients
 apify-client>=1.6.0
 
