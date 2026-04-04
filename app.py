@@ -2,22 +2,11 @@
 """
 app.py — M&A Scout Streamlit Web Portal
 
-The main dashboard for the acquisition sourcing engine.  Users can:
-    - Run data collection and analysis directly from the UI
-    - View ranked acquisition targets on an interactive map
-    - Explore detailed company cards with signal breakdowns
-    - Generate outreach letters/emails
-    - Export data to CSV/JSON
-
-Layout:
-    ┌────────────────────────────────────┐
-    │  Header + Metrics                  │
-    │  Tabs: Map | Rankings | Cards |    │
-    │        Outreach | Data Export       │  ← FREE
-    │────────────────────────────────────│
-    │  ── Premium Layers ──              │
-    │  Permit Pipeline | Fleet Aging     │  ← PREMIUM (bottom)
-    └────────────────────────────────────┘
+Redesigned to match Parcel Scout's layout and styling conventions:
+    - Cormorant Garamond serif headings, Montserrat sans-serif body
+    - Warm palette adapted for landscaping M&A (forest green + cream)
+    - Layer selection panel on the main page with descriptions
+    - Clean section flow: Header > Market > Layers > Scan > Results
 """
 
 import json
@@ -35,62 +24,233 @@ from db import get_connection, get_company_count, get_ranked_companies
 from models import CompanyWithSignals
 from rank import to_flat_dicts, SIGNAL_LABELS
 
+# ─── Layer metadata (descriptions, icons, why-it-matters) ───────────────────
+
+LAYER_META = {
+    "cslb_lifecycle": {
+        "label": "License Lifecycle",
+        "icon": "&#128203;",  # clipboard
+        "desc": "CSLB C-27 license data: sole proprietors active 25+ years nearing renewal.",
+        "why": "A sole proprietor who never incorporated after 25 years is likely approaching retirement with no succession plan.",
+        "source": "CA Contractors State License Board (public record)",
+        "cost": "Free (Apify free tier)",
+        "tier": "free",
+    },
+    "digital_ghost": {
+        "label": "Digital Ghost",
+        "icon": "&#128123;",  # ghost
+        "desc": "High-rated businesses whose owner stopped managing their online presence.",
+        "why": "A 4.5-star company with no reviews in 2+ years has a great reputation but a burnt-out owner ready for a roll-up.",
+        "source": "Yelp Fusion API (reviews + ratings)",
+        "cost": "Free (5,000 calls/day)",
+        "tier": "free",
+    },
+    "fbn_sweep": {
+        "label": "FBN Sweep",
+        "icon": "&#128220;",  # scroll
+        "desc": "County Clerk fictitious business name filings from 15-25 years ago.",
+        "why": "An old DBA filing + no website = an owner with a valuable aged client list but no digital footprint or corporate structure.",
+        "source": "County Clerk-Recorder (public record)",
+        "cost": "Free",
+        "tier": "free",
+    },
+    "digital_distress": {
+        "label": "Digital Distress",
+        "icon": "&#9888;",  # warning
+        "desc": "Google Maps businesses rated 3.5 stars or below with signs of declining service.",
+        "why": "Owners with tanking reviews are stressed and overwhelmed. They often jump at an offer that takes the headache away.",
+        "source": "Google Maps (public profiles)",
+        "cost": "Free (no API key needed)",
+        "tier": "free",
+    },
+    "nextdoor_referral": {
+        "label": "Nextdoor Referral",
+        "icon": "&#127968;",  # house
+        "desc": "First-name gardeners mentioned repeatedly in wealthy neighborhood recommendation threads.",
+        "why": "\"Manuel\" mentioned 20 times in Newport Beach with no website owns a Route worth $500K/year. The route IS the asset.",
+        "source": "Nextdoor recommendation threads",
+        "cost": "Free (manual collection)",
+        "tier": "free",
+    },
+    "permit_pipeline": {
+        "label": "Permit Stress",
+        "icon": "&#128679;",  # construction
+        "desc": "Small crews taking on $100K+ residential permits they can't handle alone.",
+        "why": "A 3-person crew on a $200K Newport Coast remodel is operationally stressed. Offer subcontracting help as a foot in the door.",
+        "source": "City building permit portals (public record)",
+        "cost": "Free (needs per-city scrapers)",
+        "tier": "premium",
+    },
+    "fleet_aging": {
+        "label": "Fleet Aging",
+        "icon": "&#128665;",  # truck
+        "desc": "Street View imagery analysed by AI for aging trucks, no branding, poor equipment.",
+        "why": "Old unbranded trucks = capex debt. The owner can't afford $100K in new equipment and might prefer a cash buyout.",
+        "source": "Google Street View + Claude Vision AI",
+        "cost": "$7/1K images + ~$0.02/analysis",
+        "tier": "premium",
+    },
+}
+
+
 # ─── Page Config ─────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="M&A Scout — Orange County",
+    page_title="M&A Scout",
     page_icon="🔍",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# ─── Custom CSS ──────────────────────────────────────────────────────────────
+
+# ─── CSS — Parcel Scout design system adapted for M&A ────────────────────────
 
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Montserrat:wght@300;400;500;600&display=swap');
 
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-
-    .main-header {
-        background: linear-gradient(135deg, #1B4332 0%, #2D6A4F 100%);
-        padding: 2rem 2.5rem;
-        border-radius: 12px;
-        margin-bottom: 1.5rem;
-        color: white;
+    /* ── Global ────────────────────────────────────────────────── */
+    html, body, [class*="css"] {
+        font-family: 'Montserrat', sans-serif;
     }
-    .main-header h1 {
-        font-size: 2rem; font-weight: 700;
-        margin: 0 0 0.3rem 0; color: white;
-    }
-    .main-header p {
-        font-size: 1rem; opacity: 0.85;
-        margin: 0; color: #E9ECEF;
+    .main .block-container {
+        padding: 3rem 5rem 4rem 5rem;
+        max-width: 1100px;
+        margin: 0 auto;
     }
 
-    .signal-badge {
-        display: inline-block; padding: 0.25rem 0.6rem;
-        border-radius: 12px; font-size: 0.78rem; font-weight: 500; margin: 0.15rem;
+    /* ── Typography ────────────────────────────────────────────── */
+    h1 {
+        font-family: 'Cormorant Garamond', serif !important;
+        font-weight: 300 !important;
+        letter-spacing: 0.06em !important;
+        color: #1B4332 !important;
     }
-    .signal-fired { background: #D4EDDA; color: #155724; border: 1px solid #C3E6CB; }
-    .signal-quiet { background: #F8F9FA; color: #6C757D; border: 1px solid #DEE2E6; }
-
-    .premium-header {
-        background: linear-gradient(135deg, #4A4A4A 0%, #6B6B6B 100%);
-        padding: 1.2rem 1.8rem;
-        border-radius: 10px;
-        margin: 2.5rem 0 1rem 0;
-        color: white;
-    }
-    .premium-header h2 {
-        font-size: 1.3rem; font-weight: 600;
-        margin: 0 0 0.2rem 0; color: white;
-    }
-    .premium-header p {
-        font-size: 0.85rem; opacity: 0.8;
-        margin: 0; color: #E0E0E0;
+    h2, h3 {
+        font-family: 'Cormorant Garamond', serif !important;
+        font-weight: 400 !important;
+        letter-spacing: 0.04em !important;
+        color: #1B4332 !important;
     }
 
+    /* Section labels (like Parcel Scout's .gb-label) */
+    .ms-label {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.1rem;
+        font-style: italic;
+        font-weight: 400;
+        color: #2D6A4F;
+        border-bottom: 1px solid #B7D4C0;
+        padding-bottom: 0.3rem;
+        margin-bottom: 1rem;
+        display: block;
+    }
+
+    /* ── Metrics ───────────────────────────────────────────────── */
+    [data-testid="metric-container"] {
+        background: #FFFFFF;
+        border: 1px solid #B7D4C0;
+        padding: 1.1rem 1.3rem;
+    }
+    [data-testid="metric-container"] label {
+        font-family: 'Montserrat', sans-serif !important;
+        font-size: 0.58rem !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.18em !important;
+        color: #2D6A4F !important;
+    }
+    [data-testid="metric-container"] [data-testid="stMetricValue"] {
+        font-family: 'Cormorant Garamond', serif !important;
+        font-size: 2rem !important;
+        font-weight: 400 !important;
+        color: #1B4332 !important;
+    }
+
+    /* ── Buttons ───────────────────────────────────────────────── */
+    .stButton > button[kind="primary"] {
+        background-color: #1B4332 !important;
+        color: #F0F7F2 !important;
+        font-family: 'Montserrat', sans-serif !important;
+        font-size: 0.68rem !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.22em !important;
+        text-transform: uppercase !important;
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 1rem 2rem !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        background-color: #2D6A4F !important;
+    }
+    .stDownloadButton > button {
+        background: transparent !important;
+        border: 1px solid #B7D4C0 !important;
+        color: #1B4332 !important;
+        font-size: 0.65rem !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.18em !important;
+        text-transform: uppercase !important;
+        border-radius: 0 !important;
+    }
+    .stDownloadButton > button:hover {
+        background: #1B4332 !important;
+        color: #F0F7F2 !important;
+    }
+
+    /* ── Tabs ──────────────────────────────────────────────────── */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0;
+        border-bottom: 1px solid #B7D4C0;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 0.62rem;
+        font-weight: 500;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        padding: 0.8rem 1.6rem;
+        color: #2D6A4F;
+    }
+    .stTabs [aria-selected="true"] {
+        border-bottom: 2px solid #1B4332 !important;
+        color: #1B4332 !important;
+    }
+
+    /* ── Expanders ─────────────────────────────────────────────── */
+    [data-testid="stExpander"] summary p {
+        font-family: 'Montserrat', sans-serif !important;
+        font-size: 0.78rem !important;
+        font-weight: 500 !important;
+        color: #1B4332 !important;
+    }
+    [data-testid="stExpander"] summary svg {
+        color: #2D6A4F !important;
+    }
+    [data-testid="stExpander"] details > div {
+        background-color: #F0F7F2 !important;
+        border: 1px solid #B7D4C0 !important;
+        padding: 1rem !important;
+    }
+
+    /* ── Checkboxes ────────────────────────────────────────────── */
+    [data-testid="stCheckbox"] label span {
+        font-size: 0.82rem !important;
+        font-weight: 500 !important;
+        color: #1A2E22 !important;
+    }
+
+    /* ── Selectbox ─────────────────────────────────────────────── */
+    [data-baseweb="select"] {
+        border-radius: 0 !important;
+    }
+
+    /* ── Alerts ────────────────────────────────────────────────── */
+    [data-testid="stAlert"][data-baseweb*="success"] {
+        background: #E8F5E9 !important;
+        border: 1.5px solid #4A6741 !important;
+    }
+
+    /* ── Hide branding ─────────────────────────────────────────── */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
@@ -98,71 +258,128 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ─── Market Selector ─────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# HEADER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+st.markdown('<span class="ms-label">Acquisition Intelligence</span>',
+            unsafe_allow_html=True)
+st.markdown("# M&A Scout")
+st.markdown("*Landscaping acquisition sourcing engine — Southern California*")
+
+st.markdown("---")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MARKET SELECTOR
+# ═══════════════════════════════════════════════════════════════════════════════
+
+st.markdown('<span class="ms-label">Target Market</span>',
+            unsafe_allow_html=True)
 
 market_options = list(config.MARKETS.keys())
 selected_market = st.selectbox(
-    "Select Market",
+    "Market",
     options=market_options,
     index=market_options.index(config.ACTIVE_MARKET),
     key="market_selector",
+    label_visibility="collapsed",
 )
-# Update the active market so all config accessors use it
 config.ACTIVE_MARKET = selected_market
 
-st.markdown(
-    '<div class="main-header">'
-    '<h1>M&A Scout</h1>'
-    '<p>Acquisition Sourcing Engine &mdash; {}</p>'
-    '</div>'.format(config.get_region()),
-    unsafe_allow_html=True,
-)
+market = config.get_market()
+st.caption("{} — {} cities, {} wealthy zip codes tracked".format(
+    market["label"], len(market["cities"]), len(market["wealthy_zips"])))
+
+st.markdown("---")
 
 
-# ─── Sidebar Controls ───────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# LAYER SELECTION PANEL
+# ═══════════════════════════════════════════════════════════════════════════════
 
-with st.sidebar:
-    st.markdown("### Configuration")
+st.markdown('<span class="ms-label">Acquisition Signal Layers</span>',
+            unsafe_allow_html=True)
+st.caption("Each layer is an independent intelligence source. "
+           "Toggle layers on or off, then run a scan.")
 
-    st.markdown("**Free Layers**")
-    layers_state = {}
-    free_layers = ["cslb_lifecycle", "digital_ghost", "fbn_sweep",
+layers_state = {}
+
+# ── Free Layers (3-column grid with descriptions) ────────────────────────────
+
+free_layer_keys = ["cslb_lifecycle", "digital_ghost", "fbn_sweep",
                    "digital_distress", "nextdoor_referral"]
-    for layer_name in free_layers:
-        layers_state[layer_name] = st.checkbox(
-            SIGNAL_LABELS.get(layer_name, layer_name),
-            value=config.LAYERS.get(layer_name, True),
-            key="layer_" + layer_name,
+
+c1, c2, c3 = st.columns(3)
+for i, key in enumerate(free_layer_keys):
+    meta = LAYER_META[key]
+    col = [c1, c2, c3][i % 3]
+    with col:
+        layers_state[key] = st.checkbox(
+            meta["label"],
+            value=config.LAYERS.get(key, True),
+            key="layer_" + key,
         )
+        st.caption(meta["desc"])
+        with st.expander("Why it matters"):
+            st.markdown(meta["why"])
+            st.markdown("**Source:** {}".format(meta["source"]))
+            st.markdown("**Cost:** {}".format(meta["cost"]))
 
-    st.markdown("**Premium Layers**")
-    for layer_name in ("permit_pipeline", "fleet_aging"):
-        layers_state[layer_name] = st.checkbox(
-            SIGNAL_LABELS.get(layer_name, layer_name) + " (PAID)",
-            value=config.LAYERS.get(layer_name, False),
-            key="layer_" + layer_name,
-        )
+st.markdown("")  # spacing
 
-    st.markdown("---")
-    st.markdown("**Filters**")
-    min_score = st.slider("Minimum Score", 0, 100, 0, 5)
+# ── Premium Layers ───────────────────────────────────────────────────────────
 
+with st.expander("Premium Layers (paid API keys required)"):
+    pc1, pc2 = st.columns(2)
+    for i, key in enumerate(["permit_pipeline", "fleet_aging"]):
+        meta = LAYER_META[key]
+        col = [pc1, pc2][i % 2]
+        with col:
+            layers_state[key] = st.checkbox(
+                meta["label"],
+                value=config.LAYERS.get(key, False),
+                key="layer_" + key,
+            )
+            st.caption(meta["desc"])
+            st.markdown("**Why:** {}".format(meta["why"]))
+            st.markdown("**Source:** {}".format(meta["source"]))
+            st.markdown("**Cost:** {}".format(meta["cost"]))
+
+st.markdown("---")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FILTERS + RUN SCAN
+# ═══════════════════════════════════════════════════════════════════════════════
+
+st.markdown('<span class="ms-label">Filters &amp; Scan</span>',
+            unsafe_allow_html=True)
+
+fc1, fc2, fc3 = st.columns([2, 2, 1])
+with fc1:
     city_filter = st.multiselect(
         "Filter by City",
         options=config.get_cities(),
         default=[],
     )
+with fc2:
+    min_score = st.slider("Minimum Score", 0, 100, 0, 5)
+with fc3:
+    st.markdown("")  # vertical alignment spacer
+    st.markdown("")
+    run_btn = st.button("Run Full Scan", type="primary", use_container_width=True)
 
-    st.markdown("---")
-    if st.button("Run Full Scan", type="primary", use_container_width=True):
-        st.session_state["run_scan"] = True
+if run_btn:
+    st.session_state["run_scan"] = True
 
 
-# ─── Data Loading ────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# DATA LOADING + SCAN EXECUTION
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @st.cache_data(ttl=60)
 def load_data():
-    """Load ranked companies from the database."""
     conn = get_connection()
     results = get_ranked_companies(conn)
     conn.close()
@@ -170,42 +387,51 @@ def load_data():
 
 
 def run_full_scan():
-    """Run the complete pipeline: scout -> analyze for the active market."""
     from analyze import run_analysis
 
-    with st.spinner("Collecting data for {}...".format(config.get_region())):
+    with st.status("Scanning {} ...".format(config.get_region()), expanded=True) as status:
         conn = get_connection()
 
         # Free collectors
+        st.write("Collecting CSLB license data...")
         from collectors.cslb import collect_cslb
-        from collectors.yelp import collect_yelp
         collect_cslb(conn)
+
+        st.write("Collecting Yelp review data...")
+        from collectors.yelp import collect_yelp
         collect_yelp(conn)
 
         if layers_state.get("fbn_sweep"):
+            st.write("Sweeping FBN filings...")
             from collectors.fbn import collect_fbn
             collect_fbn(conn)
 
         if layers_state.get("digital_distress"):
+            st.write("Scanning Google Maps for distress signals...")
             from collectors.google_distress import collect_google_distress
             collect_google_distress(conn)
 
         if layers_state.get("nextdoor_referral"):
+            st.write("Collecting Nextdoor referral data...")
             from collectors.nextdoor import collect_nextdoor
             collect_nextdoor(conn)
 
         # Premium collectors
         if config.GOOGLE_MAPS_API_KEY:
+            st.write("Enriching with Google Places data...")
             from collectors.google_places import collect_google_places
             collect_google_places(conn)
 
         if layers_state.get("permit_pipeline"):
+            st.write("Scraping building permits...")
             from collectors.permits import collect_permits
             collect_permits(conn)
 
-    with st.spinner("Running signal analysis..."):
+        st.write("Running signal analysis...")
         run_analysis(conn)
         conn.close()
+
+        status.update(label="Scan complete", state="complete", expanded=False)
 
     load_data.clear()
     st.session_state["run_scan"] = False
@@ -223,395 +449,321 @@ if min_score > 0:
 if city_filter:
     results = [r for r in results if r.company.city in city_filter]
 
-# Count enabled layers for display
 enabled_count = sum(1 for v in config.LAYERS.values() if v)
 
-# ─── Metrics Row ─────────────────────────────────────────────────────────────
+# If no data, stop here with a helpful message
+if not results:
+    st.markdown("---")
+    st.info("No companies in database yet. Click **Run Full Scan** above to collect data.")
+    st.stop()
 
-if results:
-    scores = [r.opportunity_score for r in results]
-    with_signals = sum(1 for r in results if r.signals_fired > 0)
-    avg_score = sum(scores) / len(scores) if scores else 0
-    top_score = max(scores) if scores else 0
 
-    cols = st.columns(4)
-    cols[0].metric("Companies", len(results))
-    cols[1].metric("With Signals", with_signals)
-    cols[2].metric("Avg Score", "{:.1f}".format(avg_score))
-    cols[3].metric("Top Score", "{:.1f}".format(top_score))
-else:
-    st.info(
-        "No companies in database yet. "
-        "Click **Run Full Scan** in the sidebar to collect data, "
-        "or run `python3 rank.py --full` from the terminal."
+# ═══════════════════════════════════════════════════════════════════════════════
+# RESULTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+st.markdown("---")
+st.markdown('<span class="ms-label">Results &mdash; {}</span>'.format(
+    config.get_region()), unsafe_allow_html=True)
+
+# ── Summary Metrics ──────────────────────────────────────────────────────────
+
+scores = [r.opportunity_score for r in results]
+with_signals = sum(1 for r in results if r.signals_fired > 0)
+avg_score = sum(scores) / len(scores) if scores else 0
+top_score = max(scores) if scores else 0
+
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Companies Found", len(results))
+m2.metric("Top Score", "{:.0f}%".format(top_score))
+m3.metric("Average Score", "{:.0f}%".format(avg_score))
+m4.metric("Signals Active", "{} of {}".format(
+    sum(1 for v in layers_state.values() if v), len(LAYER_META)))
+
+# ── Export buttons ───────────────────────────────────────────────────────────
+
+flat = to_flat_dicts(results)
+ec1, ec2, _ = st.columns([1, 1, 4])
+with ec1:
+    st.download_button(
+        "Export CSV",
+        data=pd.DataFrame(flat).to_csv(index=False),
+        file_name="ma_scout_{}.csv".format(datetime.now().strftime("%Y%m%d")),
+        mime="text/csv",
+        use_container_width=True,
+    )
+with ec2:
+    st.download_button(
+        "Export JSON",
+        data=json.dumps(flat, indent=2, default=str),
+        file_name="ma_scout_{}.json".format(datetime.now().strftime("%Y%m%d")),
+        mime="application/json",
+        use_container_width=True,
     )
 
+st.markdown("---")
 
-# ═══════════════════════════════════════════════════════════════════════════
-# FREE SECTION — Tabs for the core (free) acquisition intelligence
-# ═══════════════════════════════════════════════════════════════════════════
 
-tab_map, tab_rankings, tab_cards, tab_outreach, tab_data = st.tabs([
-    "Map", "Rankings", "Company Cards", "Outreach", "Data Export"
+# ═══════════════════════════════════════════════════════════════════════════════
+# TABS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+tab_rank, tab_map, tab_cards, tab_outreach, tab_data = st.tabs([
+    "Rankings", "Map", "Company Cards", "Outreach", "Raw Data"
 ])
+
+
+# ─── TAB: Rankings ───────────────────────────────────────────────────────────
+
+with tab_rank:
+    rows = []
+    for rank, r in enumerate(results, 1):
+        c = r.company
+        fired_names = [
+            SIGNAL_LABELS.get(s.layer_name, s.layer_name)
+            for s in r.signals if s.signal
+        ]
+        rows.append({
+            "Rank": rank,
+            "Score": r.opportunity_score,
+            "Signals": "{}/{}".format(r.signals_fired, enabled_count),
+            "Business": c.business_name,
+            "City": c.city or "",
+            "Entity": c.license_type or "",
+            "Years": str(next(
+                (s.data.get("years_active", "")
+                 for s in r.signals if s.layer_name == "cslb_lifecycle"),
+                "",
+            )),
+            "Fired": ", ".join(fired_names) if fired_names else "None",
+        })
+
+    df = pd.DataFrame(rows)
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Score": st.column_config.ProgressColumn(
+                "Score", min_value=0, max_value=100, format="%.0f",
+            ),
+        },
+    )
 
 
 # ─── TAB: Map ────────────────────────────────────────────────────────────────
 
 with tab_map:
-    if results:
-        m = folium.Map(
-            location=[33.72, -117.78],
-            zoom_start=10,
-            tiles="CartoDB positron",
+    bbox = config.get_bbox()
+    center_lat = (bbox[0] + bbox[2]) / 2
+    center_lon = (bbox[1] + bbox[3]) / 2
+
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=10,
+        tiles="CartoDB positron",
+    )
+
+    for r in results:
+        c = r.company
+        if not (c.lat and c.lon):
+            continue
+
+        if r.opportunity_score >= 50:
+            color, fill = "#1B4332", "#40916C"
+        elif r.opportunity_score >= 25:
+            color, fill = "#B8860B", "#DAA520"
+        else:
+            color, fill = "#6C757D", "#ADB5BD"
+
+        radius = max(5, r.opportunity_score / 10)
+
+        fired_chips = "".join(
+            '<span style="display:inline-block;padding:2px 6px;border-radius:0;'
+            'font-size:10px;font-family:Montserrat,sans-serif;'
+            'background:#E8F5E9;color:#2A4028;border:1px solid #4A6741;margin:2px;">'
+            '{}</span>'.format(SIGNAL_LABELS.get(s.layer_name, s.layer_name))
+            for s in r.signals if s.signal
         )
 
-        for r in results:
-            c = r.company
-            if c.lat and c.lon:
-                if r.opportunity_score >= 50:
-                    color, fill = "#2D6A4F", "#40916C"
-                elif r.opportunity_score >= 25:
-                    color, fill = "#B8860B", "#DAA520"
-                else:
-                    color, fill = "#6C757D", "#ADB5BD"
-
-                radius = max(5, r.opportunity_score / 10)
-
-                fired_badges = "".join(
-                    '<span style="display:inline-block;padding:2px 6px;border-radius:10px;'
-                    'font-size:11px;background:#D4EDDA;color:#155724;margin:2px;">'
-                    '{}</span>'.format(SIGNAL_LABELS.get(s.layer_name, s.layer_name))
-                    for s in r.signals if s.signal
-                )
-
-                popup_html = """
-                <div style="font-family:Inter,sans-serif;min-width:220px;padding:4px;">
-                    <div style="font-size:14px;font-weight:600;color:#1B4332;margin-bottom:4px;">
-                        {name}
-                    </div>
-                    <div style="font-size:12px;color:#6C757D;margin-bottom:6px;">
-                        {city} &bull; {entity}
-                    </div>
-                    <div style="font-size:20px;font-weight:700;color:{color};margin-bottom:4px;">
-                        {score:.0f}/100
-                    </div>
-                    <div style="background:#E9ECEF;border-radius:4px;height:6px;margin-bottom:8px;">
-                        <div style="background:{color};height:6px;border-radius:4px;width:{score}%;"></div>
-                    </div>
-                    <div style="font-size:11px;">
-                        {badges}
-                    </div>
-                </div>
-                """.format(
-                    name=c.business_name,
-                    city=c.city or "",
-                    entity=c.license_type or "Unknown entity",
-                    color=color,
-                    score=r.opportunity_score,
-                    badges=fired_badges or '<span style="color:#6C757D;">No signals</span>',
-                )
-
-                folium.CircleMarker(
-                    location=[c.lat, c.lon],
-                    radius=radius,
-                    color=color,
-                    fill=True,
-                    fill_color=fill,
-                    fill_opacity=0.7,
-                    weight=2,
-                    popup=folium.Popup(popup_html, max_width=300),
-                    tooltip="{} ({:.0f}/100)".format(c.business_name, r.opportunity_score),
-                ).add_to(m)
-
-        st_folium(m, width=None, height=550, use_container_width=True)
-
-        st.markdown("""
-        <div style="display:flex;gap:1.5rem;justify-content:center;margin-top:0.5rem;font-size:0.85rem;">
-            <span><span style="color:#2D6A4F;font-size:1.2rem;">&#9679;</span> Score &ge; 50 (Hot)</span>
-            <span><span style="color:#DAA520;font-size:1.2rem;">&#9679;</span> Score &ge; 25 (Warm)</span>
-            <span><span style="color:#ADB5BD;font-size:1.2rem;">&#9679;</span> Score &lt; 25 (Cool)</span>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.info("No companies with coordinates to display on the map.")
-
-
-# ─── TAB: Rankings ───────────────────────────────────────────────────────────
-
-with tab_rankings:
-    if results:
-        rows = []
-        for rank, r in enumerate(results, 1):
-            c = r.company
-            fired_names = [
-                SIGNAL_LABELS.get(s.layer_name, s.layer_name)
-                for s in r.signals if s.signal
-            ]
-            rows.append({
-                "Rank": rank,
-                "Score": r.opportunity_score,
-                "Signals": "{}/{}".format(r.signals_fired, enabled_count),
-                "Business": c.business_name,
-                "City": c.city or "",
-                "Entity Type": c.license_type or "",
-                "Years Active": str(next(
-                    (s.data.get("years_active", "")
-                     for s in r.signals if s.layer_name == "cslb_lifecycle"),
-                    "",
-                )),
-                "Signals Fired": ", ".join(fired_names) if fired_names else "None",
-            })
-
-        df = pd.DataFrame(rows)
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Score": st.column_config.ProgressColumn(
-                    "Score", min_value=0, max_value=100, format="%.1f",
-                ),
-            },
+        popup_html = (
+            '<div style="font-family:Montserrat,sans-serif;min-width:220px;padding:4px;">'
+            '<div style="font-family:Cormorant Garamond,serif;font-size:1.2rem;'
+            'font-weight:400;color:#1B4332;margin-bottom:4px;">{name}</div>'
+            '<div style="font-size:0.7rem;color:#6C757D;margin-bottom:6px;'
+            'letter-spacing:0.1em;text-transform:uppercase;">{city} &bull; {entity}</div>'
+            '<div style="font-family:Cormorant Garamond,serif;font-size:1.6rem;'
+            'font-weight:300;color:{color};margin-bottom:4px;">{score:.0f}%</div>'
+            '<div style="background:#E9ECEF;height:4px;margin-bottom:8px;">'
+            '<div style="background:{color};height:4px;width:{score}%;"></div></div>'
+            '<div>{badges}</div></div>'
+        ).format(
+            name=c.business_name,
+            city=c.city or "",
+            entity=c.license_type or "Unknown",
+            color=color,
+            score=r.opportunity_score,
+            badges=fired_chips or '<span style="color:#6C757D;font-size:11px;">No signals</span>',
         )
-    else:
-        st.info("No ranked companies to display.")
+
+        folium.CircleMarker(
+            location=[c.lat, c.lon],
+            radius=radius,
+            color=color,
+            fill=True,
+            fill_color=fill,
+            fill_opacity=0.7,
+            weight=2,
+            popup=folium.Popup(popup_html, max_width=300),
+            tooltip="{} ({:.0f}%)".format(c.business_name, r.opportunity_score),
+        ).add_to(m)
+
+    st.caption("Companies plotted by registered address. "
+               "Marker size reflects opportunity score.")
+    st_folium(m, use_container_width=True, height=560)
 
 
 # ─── TAB: Company Cards ─────────────────────────────────────────────────────
 
 with tab_cards:
-    if results:
-        for r in results:
-            c = r.company
-            with st.expander(
-                "**{}** — {} — Score: {:.0f}/100".format(
-                    c.business_name, c.city or "OC", r.opportunity_score
+    for r in results:
+        c = r.company
+        score = r.opportunity_score
+        if score >= 50:
+            score_color = "#1B4332"
+        elif score >= 25:
+            score_color = "#B8860B"
+        else:
+            score_color = "#6C757D"
+
+        with st.expander(
+            "**{}** — {} — {:.0f}%".format(c.business_name, c.city or "", score),
+            expanded=(score >= 50),
+        ):
+            # Header with score
+            st.markdown(
+                '<div style="padding:0.75rem 0 0.5rem;border-bottom:1px solid #B7D4C0;">'
+                '<span style="font-size:0.56rem;font-weight:700;text-transform:uppercase;'
+                'letter-spacing:0.18em;color:{color};">SCORE {score:.0f}%</span>'
+                '<div style="font-family:Cormorant Garamond,serif;font-size:1.35rem;'
+                'font-weight:400;color:#1B4332;">{name}</div>'
+                '</div>'.format(color=score_color, score=score, name=c.business_name),
+                unsafe_allow_html=True,
+            )
+
+            # Key intel table
+            st.markdown(
+                '<div style="padding:0.6rem 0;border-bottom:1px solid #B7D4C0;">'
+                '<table style="width:100%;font-family:Montserrat,sans-serif;font-size:0.72rem;color:#2A3E30;">'
+                '<tr><td>&#128100; Owner</td><td style="text-align:right;font-weight:500;">{owner}</td></tr>'
+                '<tr><td>&#128205; Address</td><td style="text-align:right;font-weight:500;">{addr}</td></tr>'
+                '<tr><td>&#128222; Phone</td><td style="text-align:right;font-weight:500;">{phone}</td></tr>'
+                '<tr><td>&#127380; License</td><td style="text-align:right;font-weight:500;">{lic} ({type})</td></tr>'
+                '</table></div>'.format(
+                    owner=c.owner_name or "Unknown",
+                    addr=c.address or "N/A",
+                    phone=c.phone or "N/A",
+                    lic=c.license_number or "N/A",
+                    type=c.license_type or "Unknown",
                 ),
-                expanded=(r.opportunity_score >= 50),
-            ):
-                col1, col2 = st.columns([2, 1])
+                unsafe_allow_html=True,
+            )
 
-                with col1:
-                    st.markdown("**Owner:** {}".format(c.owner_name or "Unknown"))
-                    st.markdown("**Address:** {}".format(c.address or "N/A"))
-                    st.markdown("**Phone:** {}".format(c.phone or "N/A"))
-                    st.markdown("**Website:** {}".format(c.website or "None"))
-                    st.markdown("**License:** {} ({})".format(
-                        c.license_number or "N/A", c.license_type or "Unknown"))
-                    if c.license_issue_date:
-                        st.markdown("**Licensed Since:** {}".format(c.license_issue_date))
-                    if c.license_expiry_date:
-                        st.markdown("**Expires:** {}".format(c.license_expiry_date))
+            # Review data
+            if c.google_rating or c.yelp_rating:
+                parts = []
+                if c.google_rating:
+                    parts.append("Google {:.1f}★ ({})".format(
+                        c.google_rating, c.google_review_count or 0))
+                if c.yelp_rating:
+                    parts.append("Yelp {:.1f}★ ({})".format(
+                        c.yelp_rating, c.yelp_review_count or 0))
+                st.caption(" &bull; ".join(parts))
 
-                with col2:
-                    score_color = (
-                        "#2D6A4F" if r.opportunity_score >= 50
-                        else "#B8860B" if r.opportunity_score >= 25
-                        else "#6C757D"
-                    )
-                    st.markdown(
-                        '<div style="text-align:center;padding:1rem;">'
-                        '<div style="font-size:2.5rem;font-weight:700;color:{};">'
-                        '{:.0f}</div>'
-                        '<div style="font-size:0.85rem;color:#6C757D;">/ 100</div>'
-                        '</div>'.format(score_color, r.opportunity_score),
-                        unsafe_allow_html=True,
-                    )
+            # Signal chips
+            fired = [s for s in r.signals if s.signal]
+            if fired:
+                chips = "".join(
+                    '<span style="display:inline-block;background:#E8F5E9;border:1px solid #4A6741;'
+                    'color:#2A4028;font-size:0.58rem;font-family:Montserrat,sans-serif;'
+                    'padding:2px 6px;margin:2px;">{}</span>'.format(
+                        SIGNAL_LABELS.get(s.layer_name, s.layer_name))
+                    for s in fired
+                )
+                st.markdown(chips, unsafe_allow_html=True)
 
-                    if c.google_rating:
-                        st.markdown("Google: {:.1f}★ ({} reviews)".format(
-                            c.google_rating, c.google_review_count or 0))
-                    if c.yelp_rating:
-                        st.markdown("Yelp: {:.1f}★ ({} reviews)".format(
-                            c.yelp_rating, c.yelp_review_count or 0))
-
-                st.markdown("---")
-                st.markdown("**Signal Analysis**")
-
+            # Full signal details
+            with st.expander("Full signal details"):
                 for signal in r.signals:
-                    icon = "✅" if signal.signal else "⬜"
+                    icon = "&#9989;" if signal.signal else "&#11036;"
                     label = SIGNAL_LABELS.get(signal.layer_name, signal.layer_name)
                     score_str = " ({:.0%})".format(signal.score) if signal.score is not None else ""
-                    st.markdown("{} **{}**{}".format(icon, label, score_str))
-                    st.markdown("&nbsp;&nbsp;&nbsp;&nbsp;{}".format(signal.detail))
-    else:
-        st.info("No companies to display. Run a scan first.")
+                    st.markdown(
+                        "{} **{}**{} — {}".format(icon, label, score_str, signal.detail),
+                        unsafe_allow_html=True,
+                    )
 
 
 # ─── TAB: Outreach ──────────────────────────────────────────────────────────
 
 with tab_outreach:
-    if results:
-        company_options = {
-            "{} ({:.0f}/100)".format(r.company.business_name, r.opportunity_score): r
-            for r in results if r.signals_fired > 0
-        }
+    company_options = {
+        "{} ({:.0f}%)".format(r.company.business_name, r.opportunity_score): r
+        for r in results if r.signals_fired > 0
+    }
 
-        if not company_options:
-            st.info("No companies with fired signals. Run analysis first.")
-        else:
-            selected_name = st.selectbox(
-                "Select a company",
-                options=list(company_options.keys()),
-            )
-            selected = company_options[selected_name]
-
-            col1, col2 = st.columns(2)
-            with col1:
-                template_type = st.selectbox(
-                    "Message Type",
-                    options=["intro_email", "acquisition_letter", "partnership_inquiry"],
-                    format_func=lambda x: {
-                        "intro_email": "Introduction Email",
-                        "acquisition_letter": "Acquisition Letter",
-                        "partnership_inquiry": "Partnership Inquiry",
-                    }[x],
-                )
-            with col2:
-                buyer_name = st.text_input(
-                    "Your Name / Company",
-                    value="a local landscape management group",
-                )
-
-            # Note about premium LLM outreach
-            if not config.ANTHROPIC_API_KEY:
-                st.caption(
-                    "Using template-based outreach. "
-                    "Add an ANTHROPIC_API_KEY for AI-personalized messages."
-                )
-
-            if st.button("Generate Outreach", type="primary"):
-                with st.spinner("Generating message..."):
-                    from outreach.templates import generate_outreach
-                    message = generate_outreach(selected, template_type, buyer_name)
-
-                st.markdown("---")
-                st.markdown("**Generated Message:**")
-                st.text_area(
-                    "Copy this message",
-                    value=message,
-                    height=350,
-                    label_visibility="collapsed",
-                )
+    if not company_options:
+        st.info("No companies with fired signals.")
     else:
-        st.info("No companies available. Run a scan first.")
+        selected_name = st.selectbox(
+            "Target Company",
+            options=list(company_options.keys()),
+        )
+        selected = company_options[selected_name]
+
+        oc1, oc2 = st.columns(2)
+        with oc1:
+            template_type = st.selectbox(
+                "Message Type",
+                options=["intro_email", "acquisition_letter", "partnership_inquiry"],
+                format_func=lambda x: {
+                    "intro_email": "Introduction Email",
+                    "acquisition_letter": "Acquisition Letter",
+                    "partnership_inquiry": "Partnership Inquiry",
+                }[x],
+            )
+        with oc2:
+            buyer_name = st.text_input(
+                "Your Name / Company",
+                value="a local landscape management group",
+            )
+
+        if not config.ANTHROPIC_API_KEY:
+            st.caption("Using template-based outreach. "
+                       "Add ANTHROPIC_API_KEY for AI-personalized messages.")
+
+        if st.button("Generate Outreach", type="primary"):
+            with st.spinner("Generating message..."):
+                from outreach.templates import generate_outreach
+                message = generate_outreach(selected, template_type, buyer_name)
+
+            st.markdown("---")
+            st.text_area("Generated Message", value=message, height=350)
 
 
-# ─── TAB: Data Export ────────────────────────────────────────────────────────
+# ─── TAB: Raw Data ──────────────────────────────────────────────────────────
 
 with tab_data:
-    if results:
-        flat = to_flat_dicts(results)
-        df = pd.DataFrame(flat)
+    conn = get_connection()
+    total = get_company_count(conn)
+    signal_count = conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
+    permit_count = conn.execute("SELECT COUNT(*) FROM permit_records").fetchone()[0]
+    conn.close()
 
-        col1, col2 = st.columns(2)
-        with col1:
-            csv_data = df.to_csv(index=False)
-            st.download_button(
-                "Download CSV",
-                data=csv_data,
-                file_name="ma_scout_{}.csv".format(datetime.now().strftime("%Y%m%d")),
-                mime="text/csv",
-                use_container_width=True,
-            )
-        with col2:
-            json_data = json.dumps(flat, indent=2, default=str)
-            st.download_button(
-                "Download JSON",
-                data=json_data,
-                file_name="ma_scout_{}.json".format(datetime.now().strftime("%Y%m%d")),
-                mime="application/json",
-                use_container_width=True,
-            )
+    dc1, dc2, dc3 = st.columns(3)
+    dc1.metric("Total Companies", total)
+    dc2.metric("Signal Records", signal_count)
+    dc3.metric("Permit Records", permit_count)
 
-        st.markdown("---")
-        st.markdown("**Database Statistics**")
-        conn = get_connection()
-        total = get_company_count(conn)
-        signal_count = conn.execute("SELECT COUNT(*) FROM signals").fetchone()[0]
-        permit_count = conn.execute("SELECT COUNT(*) FROM permit_records").fetchone()[0]
-        conn.close()
-
-        stat_cols = st.columns(3)
-        stat_cols[0].metric("Total Companies", total)
-        stat_cols[1].metric("Signal Records", signal_count)
-        stat_cols[2].metric("Permit Records", permit_count)
-
-        st.markdown("---")
-        st.markdown("**Raw Data Preview**")
-        st.dataframe(df.head(20), use_container_width=True, hide_index=True)
-    else:
-        st.info("No data to export. Run a scan first.")
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# PREMIUM SECTION — Paid layers that require API subscriptions
-# ═══════════════════════════════════════════════════════════════════════════
-
-st.markdown("""
-<div class="premium-header">
-    <h2>Premium Layers</h2>
-    <p>Additional acquisition signals requiring paid API subscriptions.
-       Enable in the sidebar after adding API keys to config.py.</p>
-</div>
-""", unsafe_allow_html=True)
-
-premium_col1, premium_col2 = st.columns(2)
-
-with premium_col1:
-    with st.container(border=True):
-        st.markdown("**Permit-to-Acquisition Pipeline**")
-        st.caption("Scrapes OC city building permits to find small crews overwhelmed by large projects.")
-
-        if config.LAYERS.get("permit_pipeline"):
-            # Show permit data if enabled
-            conn = get_connection()
-            permit_count = conn.execute("SELECT COUNT(*) FROM permit_records").fetchone()[0]
-            conn.close()
-            st.metric("Permit Records", permit_count)
-            st.success("Active")
-        else:
-            st.markdown(
-                "**Status:** Disabled  \n"
-                "**Requires:** City permit portal scrapers  \n"
-                "**Cost:** Free (public records)  \n"
-                "**Enable:** Set `permit_pipeline: True` in config.py"
-            )
-
-with premium_col2:
-    with st.container(border=True):
-        st.markdown("**Fleet Aging Vision Engine**")
-        st.caption("Uses Street View + AI vision to analyze truck/equipment condition at business addresses.")
-
-        if config.LAYERS.get("fleet_aging") and config.GOOGLE_MAPS_API_KEY and config.ANTHROPIC_API_KEY:
-            st.success("Active")
-        else:
-            missing = []
-            if not config.GOOGLE_MAPS_API_KEY:
-                missing.append("GOOGLE_MAPS_API_KEY ($7/1K images)")
-            if not config.ANTHROPIC_API_KEY:
-                missing.append("ANTHROPIC_API_KEY (~$0.02/analysis)")
-            st.markdown(
-                "**Status:** Disabled  \n"
-                "**Requires:** {}  \n"
-                "**Enable:** Add keys to config.py, set `fleet_aging: True`".format(
-                    ", ".join(missing) if missing else "API keys configured"
-                )
-            )
-
-# Google Places enhancement note
-with st.container(border=True):
-    st.markdown("**Google Places Enhancement** (Optional)")
-    st.caption(
-        "Add a GOOGLE_MAPS_API_KEY to enrich company data with Google Reviews "
-        "in addition to Yelp. Improves Digital Ghost accuracy with dual-platform review data."
-    )
-    if config.GOOGLE_MAPS_API_KEY:
-        st.success("Active — Google + Yelp reviews")
-    else:
-        st.markdown(
-            "**Status:** Using Yelp only (free)  \n"
-            "**Cost:** ~$17 per 1,000 Place Details requests  \n"
-            "**Enable:** Add GOOGLE_MAPS_API_KEY to config.py"
-        )
+    st.markdown("---")
+    st.dataframe(pd.DataFrame(flat).head(50), use_container_width=True, hide_index=True)
