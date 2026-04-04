@@ -1,0 +1,22 @@
+# Core
+requests>=2.31.0
+pydantic>=2.0.0
+
+# Web portal
+streamlit>=1.32.0
+pandas>=2.0.0
+folium>=0.14.0
+streamlit-folium>=0.15.0
+
+# Fuzzy matching (permit contractor → company matching)
+thefuzz>=0.22.0
+python-Levenshtein>=0.25.0
+
+# API clients
+apify-client>=1.6.0
+
+# LLM
+anthropic>=0.39.0
+
+# Image handling (Street View)
+Pillow>=10.0.0

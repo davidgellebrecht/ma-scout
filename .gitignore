@@ -1,0 +1,29 @@
+# Database
+data/mascout.db
+data/street_view/
+
+# Secrets
+.streamlit/secrets.toml
+
+# Output files
+ranked_*.csv
+ranked_*.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
