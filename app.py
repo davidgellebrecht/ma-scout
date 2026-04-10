@@ -24,6 +24,12 @@ from db import get_connection, get_company_count, get_ranked_companies
 from models import CompanyWithSignals
 from rank import to_flat_dicts, SIGNAL_LABELS
 
+# ─── Demo mode constants ──────────────────────────────────────────────────────
+# These two layers are the only ones fully visible in the demo.
+
+DEMO_LAYERS = {"cslb_lifecycle", "nextdoor_referral"}
+DEMO_MARKET = "Orange County"
+
 # ─── Layer metadata (descriptions, icons, why-it-matters) ───────────────────
 
 LAYER_META = {
@@ -185,6 +191,12 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# ─── Session state: track which mode the user picked on the splash page ──────
+
+if "mode" not in st.session_state:
+    st.session_state["mode"] = None          # None = splash, "demo", "unlimited"
+
+is_demo = st.session_state.get("mode") == "demo"
 
 # ─── CSS — Parcel Scout design system adapted for M&A ────────────────────────
 
@@ -337,18 +349,156 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+
+    /* ── Demo Mode: blur overlay for locked content ────────────── */
+    .demo-blur-wrapper {
+        position: relative;
+        overflow: hidden;
+        border-radius: 0;
+    }
+    .demo-blur-wrapper .demo-blur-content {
+        filter: blur(6px);
+        -webkit-filter: blur(6px);
+        user-select: none;
+        pointer-events: none;
+    }
+    .demo-blur-wrapper .demo-overlay {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(240, 247, 242, 0.5);
+        z-index: 10;
+    }
+    .demo-overlay-text {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #1B4332;
+        background: rgba(255,255,255,0.88);
+        padding: 0.5rem 1.4rem;
+        border: 1px solid #B7D4C0;
+    }
+
+    /* ── Splash page ──────────────────────────────────────────── */
+    .splash-subtitle {
+        text-align: center;
+        font-family: 'Montserrat', sans-serif;
+        font-size: 0.68rem;
+        color: #6C757D;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin-bottom: 3rem;
+    }
+    .splash-title {
+        text-align: center;
+        padding: 4rem 0 0.6rem;
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 3.2rem;
+        font-weight: 300;
+        letter-spacing: 0.06em;
+        color: #1B4332;
+    }
+    .stButton > button[kind="secondary"] {
+        font-family: 'Montserrat', sans-serif !important;
+        font-size: 0.68rem !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.22em !important;
+        text-transform: uppercase !important;
+        border: 1px solid #B7D4C0 !important;
+        border-radius: 0 !important;
+        padding: 1rem 2rem !important;
+        color: #1B4332 !important;
+        background: #FFFFFF !important;
+    }
+    .stButton > button[kind="secondary"]:hover {
+        background: #F0F7F2 !important;
+    }
+
+    /* ── Demo mode banner ─────────────────────────────────────── */
+    .demo-mode-banner {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 0.58rem;
+        font-weight: 600;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #B8860B;
+        padding: 0.3rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ─── Demo helper functions ─────────────────────────────────────────────────────
+
+def demo_blur(html_content, active=True):
+    """Wrap HTML in a blur container with 'Demo — reach out to view more' overlay."""
+    if not active:
+        return html_content
+    return (
+        '<div class="demo-blur-wrapper">'
+        '<div class="demo-blur-content">{}</div>'
+        '<div class="demo-overlay">'
+        '<span class="demo-overlay-text">Demo &mdash; reach out to view more</span>'
+        '</div></div>'
+    ).format(html_content)
+
+
+def mask_name(name, active=True):
+    """Replace a business name with block characters for demo mode."""
+    if not active or not name:
+        return name or ""
+    return name[0] + "\u2588" * min(len(name) - 1, 12)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SPLASH PAGE — the very first thing users see
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if st.session_state["mode"] is None:
+    st.markdown('<div class="splash-title">M&A Scout</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="splash-subtitle">'
+        'Landscaping Acquisition Intelligence &mdash; Southern California'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    _, col_demo, col_spacer, col_full, _ = st.columns([2, 3, 1, 3, 2])
+    with col_demo:
+        if st.button("DEMO", type="secondary", use_container_width=True, key="splash_demo"):
+            st.session_state["mode"] = "demo"
+            st.rerun()
+    with col_full:
+        if st.button("M&A SCOUT — UNLIMITED", type="primary", use_container_width=True, key="splash_unlimited"):
+            st.session_state["mode"] = "unlimited"
+            st.rerun()
+
+    st.stop()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # HEADER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-st.markdown('<span class="ms-label">Acquisition Intelligence</span>',
-            unsafe_allow_html=True)
-st.markdown("# M&A Scout")
-st.markdown("*Landscaping acquisition sourcing engine — Southern California*")
+hdr_left, hdr_right = st.columns([5, 1])
+with hdr_left:
+    st.markdown('<span class="ms-label">Acquisition Intelligence</span>',
+                unsafe_allow_html=True)
+    st.markdown("# M&A Scout")
+    if is_demo:
+        st.markdown('<span class="demo-mode-banner">Demo Mode</span>',
+                    unsafe_allow_html=True)
+    else:
+        st.markdown("*Landscaping acquisition sourcing engine — Southern California*")
+with hdr_right:
+    st.markdown("")
+    if st.button("← Back", key="exit_mode"):
+        st.session_state["mode"] = None
+        st.rerun()
 
 st.markdown("---")
 
@@ -360,15 +510,20 @@ st.markdown("---")
 st.markdown('<span class="ms-label">Target Market</span>',
             unsafe_allow_html=True)
 
-market_options = list(config.MARKETS.keys())
-selected_market = st.selectbox(
-    "Market",
-    options=market_options,
-    index=market_options.index(config.ACTIVE_MARKET),
-    key="market_selector",
-    label_visibility="collapsed",
-)
-config.ACTIVE_MARKET = selected_market
+if is_demo:
+    # Demo mode: lock to Orange County, no dropdown
+    config.ACTIVE_MARKET = DEMO_MARKET
+    st.markdown("**Orange County, CA** *(demo)*")
+else:
+    market_options = list(config.MARKETS.keys())
+    selected_market = st.selectbox(
+        "Market",
+        options=market_options,
+        index=market_options.index(config.ACTIVE_MARKET),
+        key="market_selector",
+        label_visibility="collapsed",
+    )
+    config.ACTIVE_MARKET = selected_market
 
 # Define load_data early so it's available for the file uploader
 @st.cache_data(ttl=60)
@@ -409,36 +564,63 @@ for i, key in enumerate(free_layer_keys):
     meta = LAYER_META[key]
     col = [c1, c2, c3][i % 3]
     with col:
-        layers_state[key] = st.checkbox(
-            meta["label"],
-            value=config.LAYERS.get(key, True),
-            key="layer_" + key,
-        )
-        st.caption(meta["desc"])
-        with st.expander("Why it matters"):
-            st.markdown(meta["why"])
-            st.markdown("**Source:** {}".format(meta["source"]))
-            st.markdown("**Cost:** {}".format(meta["cost"]))
+        if is_demo and key not in DEMO_LAYERS:
+            # Locked layer — show blurred card, force OFF
+            layers_state[key] = False
+            st.markdown(
+                demo_blur(
+                    '<div style="padding:0.35rem 0;">'
+                    '<strong>{} {}</strong><br/>'
+                    '<span style="font-size:0.72rem;color:#6C757D;">{}</span>'
+                    '</div>'.format(meta["icon"], meta["label"], meta["desc"]),
+                ),
+                unsafe_allow_html=True,
+            )
+        else:
+            # Normal interactive checkbox (in demo, default both ON)
+            layers_state[key] = st.checkbox(
+                meta["label"],
+                value=True if is_demo else config.LAYERS.get(key, True),
+                key="layer_" + key,
+            )
+            st.caption(meta["desc"])
+            with st.expander("Why it matters"):
+                st.markdown(meta["why"])
+                st.markdown("**Source:** {}".format(meta["source"]))
+                st.markdown("**Cost:** {}".format(meta["cost"]))
 
 st.markdown("")  # spacing
 
 # ── Premium Layers ───────────────────────────────────────────────────────────
 
-with st.expander("Premium Layers (paid API keys required)"):
-    pc1, pc2, pc3 = st.columns(3)
-    for i, key in enumerate(["digital_ghost", "permit_pipeline", "fleet_aging"]):
-        meta = LAYER_META[key]
-        col = [pc1, pc2, pc3][i % 3]
-        with col:
-            layers_state[key] = st.checkbox(
-                meta["label"],
-                value=config.LAYERS.get(key, False),
-                key="layer_" + key,
-            )
-            st.caption(meta["desc"])
-            st.markdown("**Why:** {}".format(meta["why"]))
-            st.markdown("**Source:** {}".format(meta["source"]))
-            st.markdown("**Cost:** {}".format(meta["cost"]))
+if is_demo:
+    # Entire premium section blurred
+    for key in ["digital_ghost", "permit_pipeline", "fleet_aging"]:
+        layers_state[key] = False
+    st.markdown(
+        demo_blur(
+            '<div style="padding:0.7rem;">'
+            '<strong>Premium Layers</strong> (paid API keys required) &mdash; 3 layers'
+            '</div>',
+        ),
+        unsafe_allow_html=True,
+    )
+else:
+    with st.expander("Premium Layers (paid API keys required)"):
+        pc1, pc2, pc3 = st.columns(3)
+        for i, key in enumerate(["digital_ghost", "permit_pipeline", "fleet_aging"]):
+            meta = LAYER_META[key]
+            col = [pc1, pc2, pc3][i % 3]
+            with col:
+                layers_state[key] = st.checkbox(
+                    meta["label"],
+                    value=config.LAYERS.get(key, False),
+                    key="layer_" + key,
+                )
+                st.caption(meta["desc"])
+                st.markdown("**Why:** {}".format(meta["why"]))
+                st.markdown("**Source:** {}".format(meta["source"]))
+                st.markdown("**Cost:** {}".format(meta["cost"]))
 
 st.markdown("---")
 
@@ -536,7 +718,7 @@ if min_score > 0:
 if city_filter:
     results = [r for r in results if r.company.city in city_filter]
 
-enabled_count = sum(1 for v in config.LAYERS.values() if v)
+enabled_count = sum(1 for v in layers_state.values() if v)
 
 # Check if signals have been generated (not just companies loaded)
 has_signals = any(r.signals_fired > 0 for r in results) if results else False
@@ -577,26 +759,27 @@ m3.metric("Average Score", "{:.0f}%".format(avg_score))
 m4.metric("Signals Active", "{} of {}".format(
     sum(1 for v in layers_state.values() if v), len(LAYER_META)))
 
-# ── Export buttons ───────────────────────────────────────────────────────────
+# ── Export buttons (hidden in demo) ──────────────────────────────────────────
 
 flat = to_flat_dicts(results)
-ec1, ec2, _ = st.columns([1, 1, 4])
-with ec1:
-    st.download_button(
-        "Export CSV",
-        data=pd.DataFrame(flat).to_csv(index=False),
-        file_name="ma_scout_{}.csv".format(datetime.now().strftime("%Y%m%d")),
-        mime="text/csv",
-        use_container_width=True,
-    )
-with ec2:
-    st.download_button(
-        "Export JSON",
-        data=json.dumps(flat, indent=2, default=str),
-        file_name="ma_scout_{}.json".format(datetime.now().strftime("%Y%m%d")),
-        mime="application/json",
-        use_container_width=True,
-    )
+if not is_demo:
+    ec1, ec2, _ = st.columns([1, 1, 4])
+    with ec1:
+        st.download_button(
+            "Export CSV",
+            data=pd.DataFrame(flat).to_csv(index=False),
+            file_name="ma_scout_{}.csv".format(datetime.now().strftime("%Y%m%d")),
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with ec2:
+        st.download_button(
+            "Export JSON",
+            data=json.dumps(flat, indent=2, default=str),
+            file_name="ma_scout_{}.json".format(datetime.now().strftime("%Y%m%d")),
+            mime="application/json",
+            use_container_width=True,
+        )
 
 st.markdown("---")
 
@@ -624,7 +807,7 @@ with tab_rank:
             "Rank": rank,
             "Score": r.opportunity_score,
             "Signals": "{}/{}".format(r.signals_fired, enabled_count),
-            "Business": c.business_name,
+            "Business": mask_name(c.business_name, is_demo),
             "City": c.city or "",
             "Entity": c.license_type or "",
             "Years": str(next(
@@ -683,6 +866,8 @@ with tab_map:
             for s in r.signals if s.signal
         )
 
+        display_name = mask_name(c.business_name, is_demo)
+
         popup_html = (
             '<div style="font-family:Montserrat,sans-serif;min-width:220px;padding:4px;">'
             '<div style="font-family:Cormorant Garamond,serif;font-size:1.2rem;'
@@ -695,7 +880,7 @@ with tab_map:
             '<div style="background:{color};height:4px;width:{score}%;"></div></div>'
             '<div>{badges}</div></div>'
         ).format(
-            name=c.business_name,
+            name=display_name,
             city=c.city or "",
             entity=c.license_type or "Unknown",
             color=color,
@@ -712,7 +897,7 @@ with tab_map:
             fill_opacity=0.7,
             weight=2,
             popup=folium.Popup(popup_html, max_width=300),
-            tooltip="{} ({:.0f}%)".format(c.business_name, r.opportunity_score),
+            tooltip="{} ({:.0f}%)".format(display_name, r.opportunity_score),
         ).add_to(m)
 
     st.caption("Companies plotted by registered address. "
@@ -733,8 +918,10 @@ with tab_cards:
         else:
             score_color = "#6C757D"
 
+        card_name = mask_name(c.business_name, is_demo)
+
         with st.expander(
-            "**{}** — {} — {:.0f}%".format(c.business_name, c.city or "", score),
+            "**{}** — {} — {:.0f}%".format(card_name, c.city or "", score),
             expanded=(score >= 50),
         ):
             # Header with score
@@ -744,25 +931,28 @@ with tab_cards:
                 'letter-spacing:0.18em;color:{color};">SCORE {score:.0f}%</span>'
                 '<div style="font-family:Cormorant Garamond,serif;font-size:1.35rem;'
                 'font-weight:400;color:#1B4332;">{name}</div>'
-                '</div>'.format(color=score_color, score=score, name=c.business_name),
+                '</div>'.format(color=score_color, score=score, name=card_name),
                 unsafe_allow_html=True,
             )
 
-            # Key intel table
-            st.markdown(
+            # Key intel table (blurred in demo)
+            intel_html = (
                 '<div style="padding:0.6rem 0;border-bottom:1px solid #B7D4C0;">'
                 '<table style="width:100%;font-family:Montserrat,sans-serif;font-size:0.72rem;color:#2A3E30;">'
                 '<tr><td>&#128100; Owner</td><td style="text-align:right;font-weight:500;">{owner}</td></tr>'
                 '<tr><td>&#128205; Address</td><td style="text-align:right;font-weight:500;">{addr}</td></tr>'
                 '<tr><td>&#128222; Phone</td><td style="text-align:right;font-weight:500;">{phone}</td></tr>'
                 '<tr><td>&#127380; License</td><td style="text-align:right;font-weight:500;">{lic} ({type})</td></tr>'
-                '</table></div>'.format(
-                    owner=c.owner_name or "Unknown",
-                    addr=c.address or "N/A",
-                    phone=c.phone or "N/A",
-                    lic=c.license_number or "N/A",
-                    type=c.license_type or "Unknown",
-                ),
+                '</table></div>'
+            ).format(
+                owner=c.owner_name or "Unknown",
+                addr=c.address or "N/A",
+                phone=c.phone or "N/A",
+                lic=c.license_number or "N/A",
+                type=c.license_type or "Unknown",
+            )
+            st.markdown(
+                demo_blur(intel_html, is_demo) if is_demo else intel_html,
                 unsafe_allow_html=True,
             )
 
@@ -804,48 +994,60 @@ with tab_cards:
 # ─── TAB: Outreach ──────────────────────────────────────────────────────────
 
 with tab_outreach:
-    company_options = {
-        "{} ({:.0f}%)".format(r.company.business_name, r.opportunity_score): r
-        for r in results if r.signals_fired > 0
-    }
-
-    if not company_options:
-        st.info("No companies with fired signals.")
-    else:
-        selected_name = st.selectbox(
-            "Target Company",
-            options=list(company_options.keys()),
+    if is_demo:
+        st.markdown(
+            demo_blur(
+                '<div style="padding:2rem;text-align:center;">'
+                '<p style="font-size:0.85rem;color:#6C757D;">'
+                'AI-powered outreach message generation for every target company.<br/>'
+                'Choose from Introduction Email, Acquisition Letter, or Partnership Inquiry.'
+                '</p></div>',
+            ),
+            unsafe_allow_html=True,
         )
-        selected = company_options[selected_name]
+    else:
+        company_options = {
+            "{} ({:.0f}%)".format(r.company.business_name, r.opportunity_score): r
+            for r in results if r.signals_fired > 0
+        }
 
-        oc1, oc2 = st.columns(2)
-        with oc1:
-            template_type = st.selectbox(
-                "Message Type",
-                options=["intro_email", "acquisition_letter", "partnership_inquiry"],
-                format_func=lambda x: {
-                    "intro_email": "Introduction Email",
-                    "acquisition_letter": "Acquisition Letter",
-                    "partnership_inquiry": "Partnership Inquiry",
-                }[x],
+        if not company_options:
+            st.info("No companies with fired signals.")
+        else:
+            selected_name = st.selectbox(
+                "Target Company",
+                options=list(company_options.keys()),
             )
-        with oc2:
-            buyer_name = st.text_input(
-                "Your Name / Company",
-                value="a local landscape management group",
-            )
+            selected = company_options[selected_name]
 
-        if not config.ANTHROPIC_API_KEY:
-            st.caption("Using template-based outreach. "
-                       "Add ANTHROPIC_API_KEY for AI-personalized messages.")
+            oc1, oc2 = st.columns(2)
+            with oc1:
+                template_type = st.selectbox(
+                    "Message Type",
+                    options=["intro_email", "acquisition_letter", "partnership_inquiry"],
+                    format_func=lambda x: {
+                        "intro_email": "Introduction Email",
+                        "acquisition_letter": "Acquisition Letter",
+                        "partnership_inquiry": "Partnership Inquiry",
+                    }[x],
+                )
+            with oc2:
+                buyer_name = st.text_input(
+                    "Your Name / Company",
+                    value="a local landscape management group",
+                )
 
-        if st.button("Generate Outreach", type="primary"):
-            with st.spinner("Generating message..."):
-                from outreach.templates import generate_outreach
-                message = generate_outreach(selected, template_type, buyer_name)
+            if not config.ANTHROPIC_API_KEY:
+                st.caption("Using template-based outreach. "
+                           "Add ANTHROPIC_API_KEY for AI-personalized messages.")
 
-            st.markdown("---")
-            st.text_area("Generated Message", value=message, height=350)
+            if st.button("Generate Outreach", type="primary"):
+                with st.spinner("Generating message..."):
+                    from outreach.templates import generate_outreach
+                    message = generate_outreach(selected, template_type, buyer_name)
+
+                st.markdown("---")
+                st.text_area("Generated Message", value=message, height=350)
 
 
 # ─── TAB: Raw Data ──────────────────────────────────────────────────────────
@@ -863,4 +1065,9 @@ with tab_data:
     dc3.metric("Permit Records", permit_count)
 
     st.markdown("---")
-    st.dataframe(pd.DataFrame(flat).head(50), use_container_width=True, hide_index=True)
+    display_df = pd.DataFrame(flat).head(50)
+    if is_demo:
+        for col in display_df.columns:
+            if "business" in col.lower() or col.lower() in ("name", "owner_name", "owner"):
+                display_df[col] = display_df[col].apply(lambda x: mask_name(x, True) if isinstance(x, str) else x)
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
