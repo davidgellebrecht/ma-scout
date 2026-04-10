@@ -1118,6 +1118,6 @@ with tab_data:
     display_df = pd.DataFrame(flat).head(50)
     if is_demo:
         for col in display_df.columns:
-            if "business" in col.lower() or col.lower() in ("name", "owner_name", "owner"):
+            if "business" in col.lower() or "address" in col.lower() or col.lower() in ("name", "owner_name", "owner"):
                 display_df[col] = display_df[col].apply(lambda x: mask_name(x, True) if isinstance(x, str) else x)
     st.dataframe(display_df, use_container_width=True, hide_index=True)
