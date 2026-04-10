@@ -859,20 +859,53 @@ with tab_rank:
 # ─── TAB: Map ────────────────────────────────────────────────────────────────
 
 with tab_map:
-    bbox = config.get_bbox()
-    center_lat = (bbox[0] + bbox[2]) / 2
-    center_lon = (bbox[1] + bbox[3]) / 2
+    # Approximate city centres — used to place companies that lack lat/lon
+    CITY_COORDS = {
+        "newport beach": (33.6189, -117.9298),
+        "costa mesa":    (33.6411, -117.9187),
+        "anaheim":       (33.8366, -117.9143),
+        "irvine":        (33.6846, -117.8265),
+        "huntington beach": (33.6595, -117.9988),
+        "mission viejo":  (33.5965, -117.6590),
+        "laguna beach":   (33.5427, -117.7854),
+    }
+
+    # Build list of plottable locations
+    import random
+    random.seed(42)  # reproducible jitter
+
+    plotted = []
+    for r in results:
+        c = r.company
+        lat, lon = c.lat, c.lon
+        if not (lat and lon):
+            # Fall back to city centre with small jitter
+            city_key = (c.city or "").lower()
+            if city_key in CITY_COORDS:
+                clat, clon = CITY_COORDS[city_key]
+                lat = clat + random.uniform(-0.012, 0.012)
+                lon = clon + random.uniform(-0.012, 0.012)
+            else:
+                continue  # no way to place this company
+        plotted.append((r, lat, lon))
+
+    # Centre map on the actual companies, not the full market bbox
+    if plotted:
+        avg_lat = sum(p[1] for p in plotted) / len(plotted)
+        avg_lon = sum(p[2] for p in plotted) / len(plotted)
+    else:
+        bbox = config.get_bbox()
+        avg_lat = (bbox[0] + bbox[2]) / 2
+        avg_lon = (bbox[1] + bbox[3]) / 2
 
     m = folium.Map(
-        location=[center_lat, center_lon],
-        zoom_start=10,
+        location=[avg_lat, avg_lon],
+        zoom_start=13 if is_demo else 10,
         tiles="CartoDB positron",
     )
 
-    for r in results:
+    for r, lat, lon in plotted:
         c = r.company
-        if not (c.lat and c.lon):
-            continue
 
         if r.opportunity_score >= 50:
             color, fill = "#1B4332", "#40916C"
@@ -914,7 +947,7 @@ with tab_map:
         )
 
         folium.CircleMarker(
-            location=[c.lat, c.lon],
+            location=[lat, lon],
             radius=radius,
             color=color,
             fill=True,
@@ -1019,60 +1052,52 @@ with tab_cards:
 # ─── TAB: Outreach ──────────────────────────────────────────────────────────
 
 with tab_outreach:
-    if is_demo:
-        st.markdown(
-            demo_blur(
-                '<div style="padding:2rem;text-align:center;">'
-                '<p style="font-size:0.85rem;color:#6C757D;">'
-                'AI-powered outreach message generation for every target company.<br/>'
-                'Choose from Introduction Email, Acquisition Letter, or Partnership Inquiry.'
-                '</p></div>',
-            ),
-            unsafe_allow_html=True,
-        )
+    # In demo mode, mask the company names but keep the UI fully functional
+    company_options = {
+        "{} ({:.0f}%)".format(
+            mask_name(r.company.business_name, is_demo),
+            r.opportunity_score,
+        ): r
+        for r in results if r.signals_fired > 0
+    }
+
+    if not company_options:
+        st.info("No companies with fired signals.")
     else:
-        company_options = {
-            "{} ({:.0f}%)".format(r.company.business_name, r.opportunity_score): r
-            for r in results if r.signals_fired > 0
-        }
+        selected_name = st.selectbox(
+            "Target Company",
+            options=list(company_options.keys()),
+        )
+        selected = company_options[selected_name]
 
-        if not company_options:
-            st.info("No companies with fired signals.")
-        else:
-            selected_name = st.selectbox(
-                "Target Company",
-                options=list(company_options.keys()),
+        oc1, oc2 = st.columns(2)
+        with oc1:
+            template_type = st.selectbox(
+                "Message Type",
+                options=["intro_email", "acquisition_letter", "partnership_inquiry"],
+                format_func=lambda x: {
+                    "intro_email": "Introduction Email",
+                    "acquisition_letter": "Acquisition Letter",
+                    "partnership_inquiry": "Partnership Inquiry",
+                }[x],
             )
-            selected = company_options[selected_name]
+        with oc2:
+            buyer_name = st.text_input(
+                "Your Name / Company",
+                value="a local landscape management group",
+            )
 
-            oc1, oc2 = st.columns(2)
-            with oc1:
-                template_type = st.selectbox(
-                    "Message Type",
-                    options=["intro_email", "acquisition_letter", "partnership_inquiry"],
-                    format_func=lambda x: {
-                        "intro_email": "Introduction Email",
-                        "acquisition_letter": "Acquisition Letter",
-                        "partnership_inquiry": "Partnership Inquiry",
-                    }[x],
-                )
-            with oc2:
-                buyer_name = st.text_input(
-                    "Your Name / Company",
-                    value="a local landscape management group",
-                )
+        if not config.ANTHROPIC_API_KEY:
+            st.caption("Using template-based outreach. "
+                       "Add ANTHROPIC_API_KEY for AI-personalized messages.")
 
-            if not config.ANTHROPIC_API_KEY:
-                st.caption("Using template-based outreach. "
-                           "Add ANTHROPIC_API_KEY for AI-personalized messages.")
+        if st.button("Generate Outreach", type="primary"):
+            with st.spinner("Generating message..."):
+                from outreach.templates import generate_outreach
+                message = generate_outreach(selected, template_type, buyer_name)
 
-            if st.button("Generate Outreach", type="primary"):
-                with st.spinner("Generating message..."):
-                    from outreach.templates import generate_outreach
-                    message = generate_outreach(selected, template_type, buyer_name)
-
-                st.markdown("---")
-                st.text_area("Generated Message", value=message, height=350)
+            st.markdown("---")
+            st.text_area("Generated Message", value=message, height=350)
 
 
 # ─── TAB: Raw Data ──────────────────────────────────────────────────────────
