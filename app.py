@@ -29,6 +29,7 @@ from rank import to_flat_dicts, SIGNAL_LABELS
 
 DEMO_LAYERS = {"cslb_lifecycle", "nextdoor_referral"}
 DEMO_MARKET = "Orange County"
+DEMO_CITIES = {"Newport Beach", "Costa Mesa"}   # small subset for fast demo scans
 
 # ─── Layer metadata (descriptions, icons, why-it-matters) ───────────────────
 
@@ -657,49 +658,65 @@ if run_btn:
 def run_full_scan():
     from analyze import run_analysis
 
-    with st.status("Scanning {} ...".format(config.get_region()), expanded=True) as status:
+    scan_label = "Demo scan — {} ...".format(config.get_region()) if is_demo \
+                 else "Scanning {} ...".format(config.get_region())
+
+    with st.status(scan_label, expanded=True) as status:
         conn = get_connection()
 
-        # Free collectors
-        st.write("Collecting CSLB license data...")
-        from collectors.cslb import collect_cslb
-        collect_cslb(conn)
+        if is_demo:
+            # ── Demo: skip slow CSLB collection (data already baked in),
+            #    only collect Nextdoor demo data, then analyse a small city subset.
+            if layers_state.get("nextdoor_referral"):
+                st.write("Collecting Nextdoor referral data...")
+                from collectors.nextdoor import collect_nextdoor
+                collect_nextdoor(conn)
 
-        if layers_state.get("fbn_sweep"):
-            st.write("Sweeping FBN filings...")
-            from collectors.fbn import collect_fbn
-            collect_fbn(conn)
+            st.write("Running signal analysis on {} ...".format(
+                ", ".join(sorted(DEMO_CITIES))))
+            run_analysis(conn, cities=DEMO_CITIES)
+        else:
+            # ── Full scan: all collectors + full analysis ──────────────
+            # Free collectors
+            st.write("Collecting CSLB license data...")
+            from collectors.cslb import collect_cslb
+            collect_cslb(conn)
 
-        if layers_state.get("digital_distress"):
-            st.write("Scanning Google Maps for distress signals...")
-            from collectors.google_distress import collect_google_distress
-            collect_google_distress(conn)
+            if layers_state.get("fbn_sweep"):
+                st.write("Sweeping FBN filings...")
+                from collectors.fbn import collect_fbn
+                collect_fbn(conn)
 
-        if layers_state.get("nextdoor_referral"):
-            st.write("Collecting Nextdoor referral data...")
-            from collectors.nextdoor import collect_nextdoor
-            collect_nextdoor(conn)
+            if layers_state.get("digital_distress"):
+                st.write("Scanning Google Maps for distress signals...")
+                from collectors.google_distress import collect_google_distress
+                collect_google_distress(conn)
 
-        # Premium collectors
-        if config.YELP_API_KEY and layers_state.get("digital_ghost"):
-            st.write("Collecting Yelp review data...")
-            from collectors.yelp import collect_yelp
-            collect_yelp(conn)
+            if layers_state.get("nextdoor_referral"):
+                st.write("Collecting Nextdoor referral data...")
+                from collectors.nextdoor import collect_nextdoor
+                collect_nextdoor(conn)
 
-        if config.GOOGLE_MAPS_API_KEY:
-            st.write("Enriching with Google Places data...")
-            from collectors.google_places import collect_google_places
-            collect_google_places(conn)
+            # Premium collectors
+            if config.YELP_API_KEY and layers_state.get("digital_ghost"):
+                st.write("Collecting Yelp review data...")
+                from collectors.yelp import collect_yelp
+                collect_yelp(conn)
 
-        if layers_state.get("permit_pipeline"):
-            st.write("Scraping building permits...")
-            from collectors.permits import collect_permits
-            collect_permits(conn)
+            if config.GOOGLE_MAPS_API_KEY:
+                st.write("Enriching with Google Places data...")
+                from collectors.google_places import collect_google_places
+                collect_google_places(conn)
 
-        st.write("Running signal analysis...")
-        run_analysis(conn)
+            if layers_state.get("permit_pipeline"):
+                st.write("Scraping building permits...")
+                from collectors.permits import collect_permits
+                collect_permits(conn)
+
+            st.write("Running signal analysis...")
+            run_analysis(conn)
+
         conn.close()
-
         status.update(label="Scan complete", state="complete", expanded=False)
 
     load_data.clear()
@@ -713,6 +730,9 @@ if st.session_state.get("run_scan"):
 results = load_data()
 
 # Apply filters
+if is_demo:
+    # Demo: only show companies from the demo cities
+    results = [r for r in results if r.company.city in DEMO_CITIES]
 if min_score > 0:
     results = [r for r in results if r.opportunity_score >= min_score]
 if city_filter:
@@ -733,7 +753,12 @@ if not has_signals:
     conn = get_connection()
     total = get_company_count(conn)
     conn.close()
-    st.success("**{}** contractors loaded from CSLB data. Click **Run Full Scan** above to analyse them with all 13 signal layers.".format(total))
+    if is_demo:
+        st.success("**{}** contractors loaded. Click **Run Full Scan** above to analyse {} demo cities with {} signal layers.".format(
+            total, len(DEMO_CITIES), len(DEMO_LAYERS)))
+    else:
+        st.success("**{}** contractors loaded from CSLB data. Click **Run Full Scan** above to analyse them with all {} signal layers.".format(
+            total, len(LAYER_META)))
     st.stop()
 
 

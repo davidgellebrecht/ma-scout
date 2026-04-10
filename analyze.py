@@ -74,9 +74,11 @@ ALL_LAYERS = [
 ]
 
 
-def run_analysis(conn=None) -> int:
+def run_analysis(conn=None, cities=None) -> int:
     """
-    Run all enabled layers against all companies.
+    Run all enabled layers against companies.
+    Pass *cities* (a set/list of city names) to limit the scope — useful for
+    fast demo scans where we only need a handful of results.
     Returns the total number of signals generated.
     """
     close_conn = False
@@ -85,6 +87,8 @@ def run_analysis(conn=None) -> int:
         close_conn = True
 
     companies = get_companies(conn)
+    if cities:
+        companies = [c for c in companies if c.city in cities]
     if not companies:
         print("  No companies in database. Run scout.py first.")
         return 0
