@@ -88,7 +88,8 @@ def run_analysis(conn=None, cities=None) -> int:
 
     companies = get_companies(conn)
     if cities:
-        companies = [c for c in companies if c.city in cities]
+        cities_lower = {c.lower() for c in cities}
+        companies = [c for c in companies if (c.city or "").lower() in cities_lower]
     if not companies:
         print("  No companies in database. Run scout.py first.")
         return 0

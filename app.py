@@ -29,7 +29,7 @@ from rank import to_flat_dicts, SIGNAL_LABELS
 
 DEMO_LAYERS = {"cslb_lifecycle", "nextdoor_referral"}
 DEMO_MARKET = "Orange County"
-DEMO_CITIES = {"Newport Beach", "Costa Mesa"}   # small subset for fast demo scans
+DEMO_CITIES = {"newport beach", "costa mesa"}   # lowercase — always compare with .lower()
 
 # ─── Layer metadata (descriptions, icons, why-it-matters) ───────────────────
 
@@ -673,7 +673,7 @@ def run_full_scan():
                 collect_nextdoor(conn)
 
             st.write("Running signal analysis on {} ...".format(
-                ", ".join(sorted(DEMO_CITIES))))
+                ", ".join(c.title() for c in sorted(DEMO_CITIES))))
             run_analysis(conn, cities=DEMO_CITIES)
         else:
             # ── Full scan: all collectors + full analysis ──────────────
@@ -731,8 +731,8 @@ results = load_data()
 
 # Apply filters
 if is_demo:
-    # Demo: only show companies from the demo cities
-    results = [r for r in results if r.company.city in DEMO_CITIES]
+    # Demo: only show companies from the demo cities (case-insensitive)
+    results = [r for r in results if (r.company.city or "").lower() in DEMO_CITIES]
 if min_score > 0:
     results = [r for r in results if r.opportunity_score >= min_score]
 if city_filter:
